@@ -1,0 +1,465 @@
+require('dotenv').config();
+const express = require('express');
+const { Pool } = require('pg');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const cors = require('cors');
+const rateLimit = require('express-rate-limit');
+const WebSocket = require('ws');
+const http = require('http');
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+
+// Create HTTP server for WebSocket
+const server = http.createServer(app);
+const wss = new WebSocket.Server({ server });
+
+// Store WebSocket connections
+const deviceConnections = new Map();
+const userConnections = new Map();
+
+// PostgreSQL connection
+const db = new Pool({
+  user: process.env.DB_USER || 'postgres',
+  host: process.env.DB_HOST || 'localhost',
+  database: process.env.DB_NAME || 'gogreener',
+  password: process.env.DB_PASSWORD || '9900',
+  port: process.env.DB_PORT || 5432,
+});
+
+// Test database connection
+db.query('SELECT NOW()', (err, result) => {
+  if (err) {
+    console.error('Database connection failed:', err);
+  } else {
+    console.log('Database connected successfully');
+  }
+});
+
+// Middleware
+app.use(cors());
+app.use(express.json());
+app.set('trust proxy', 1);
+app.use('/api/', rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100
+}));
+
+// WebSocket connection handler
+wss.on('connection', (ws, req) => {
+  ws.on('message', async (data) => {
+    try {
+      const message = JSON.parse(data.toString());
+      
+      if (message.type === 'device_connect') {
+        const { deviceId } = message;
+        deviceConnections.set(deviceId, ws);
+        
+        await db.query('UPDATE devices SET is_online = true, last_seen = CURRENT_TIMESTAMP WHERE id = $1', [deviceId]);
+        console.log(`Device ${deviceId} connected via WebSocket`);
+        broadcastDeviceStatus(deviceId, true);
+        
+      } else if (message.type === 'user_connect') {
+        const { token } = message;
+        try {
+          const user = jwt.verify(token, JWT_SECRET);
+          if (!userConnections.has(user.id)) {
+            userConnections.set(user.id, []);
+          }
+          userConnections.get(user.id).push(ws);
+          console.log(`User ${user.username} connected via WebSocket`);
+        } catch (error) {
+          ws.send(JSON.stringify({ type: 'auth_error', message: 'Invalid token' }));
+        }
+        
+      } else if (message.type === 'heartbeat') {
+        const { deviceId, switch_state, current_reading, voltage } = message;
+        
+        // Check if device exists first
+        const deviceCheck = await db.query('SELECT id FROM devices WHERE id = $1', [deviceId]);
+        if (deviceCheck.rows.length === 0) {
+          console.log(`Heartbeat from unregistered device: ${deviceId}`);
+          return;
+        }
+        
+        await db.query('UPDATE devices SET is_online = true, last_seen = CURRENT_TIMESTAMP WHERE id = $1', [deviceId]);
+        await db.query('INSERT INTO device_states (device_id, switch_state, current_reading, voltage) VALUES ($1, $2, $3, $4)',
+                      [deviceId, switch_state, current_reading || 0, voltage || 0]);
+        
+        broadcastDeviceUpdate(deviceId, { switch_state, current_reading, voltage });
+      }
+      
+    } catch (error) {
+      console.error('WebSocket message error:', error);
+    }
+  });
+  
+  ws.on('close', async () => {
+    for (const [deviceId, connection] of deviceConnections.entries()) {
+      if (connection === ws) {
+        deviceConnections.delete(deviceId);
+        await db.query('UPDATE devices SET is_online = false WHERE id = $1', [deviceId]);
+        broadcastDeviceStatus(deviceId, false);
+        console.log(`Device ${deviceId} disconnected`);
+        break;
+      }
+    }
+    
+    for (const [userId, connections] of userConnections.entries()) {
+      const index = connections.indexOf(ws);
+      if (index !== -1) {
+        connections.splice(index, 1);
+        if (connections.length === 0) {
+          userConnections.delete(userId);
+        }
+        break;
+      }
+    }
+  });
+});
+
+function broadcastDeviceStatus(deviceId, isOnline) {
+  const message = JSON.stringify({
+    type: 'device_status',
+    deviceId,
+    isOnline
+  });
+  
+  userConnections.forEach(connections => {
+    connections.forEach(ws => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(message);
+      }
+    });
+  });
+}
+
+function broadcastDeviceUpdate(deviceId, data) {
+  const message = JSON.stringify({
+    type: 'device_update',
+    deviceId,
+    data
+  });
+  
+  userConnections.forEach(connections => {
+    connections.forEach(ws => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(message);
+      }
+    });
+  });
+}
+
+function sendCommandToDevice(deviceId, command) {
+  const deviceWs = deviceConnections.get(deviceId);
+  if (deviceWs && deviceWs.readyState === WebSocket.OPEN) {
+    deviceWs.send(JSON.stringify({
+      type: 'command',
+      command_type: command.action,
+      command_value: command.value
+    }));
+    return true;
+  }
+  return false;
+}
+
+// Auth middleware
+const authenticateToken = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) {
+    return res.status(401).json({ error: 'Access token required' });
+  }
+
+  jwt.verify(token, JWT_SECRET, (err, user) => {
+    if (err) return res.status(403).json({ error: 'Invalid token' });
+    req.user = user;
+    next();
+  });
+};
+
+// Admin middleware
+const requireAdmin = (req, res, next) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+  next();
+};
+
+// AUTHENTICATION ROUTES
+app.post('/api/auth/signup', async (req, res) => {
+  const { username, email, password } = req.body;
+
+  if (!username || !email || !password) {
+    return res.status(400).json({ error: 'All fields required' });
+  }
+
+  try {
+    const hashedPassword = await bcrypt.hash(password, 10);
+    
+    const result = await db.query(
+      'INSERT INTO users (username, email, password) VALUES ($1, $2, $3) RETURNING id, username, email, role',
+      [username, email, hashedPassword]
+    );
+    
+    const user = result.rows[0];
+    const token = jwt.sign({ id: user.id, username: user.username, role: user.role }, JWT_SECRET);
+    res.json({ token, user });
+    
+  } catch (error) {
+    if (error.code === '23505') {
+      return res.status(400).json({ error: 'Username or email already exists' });
+    }
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.post('/api/auth/login', async (req, res) => {
+  const { email, password } = req.body;
+
+  try {
+    const result = await db.query('SELECT * FROM users WHERE email = $1', [email]);
+    const user = result.rows[0];
+    
+    if (!user) return res.status(401).json({ error: 'Invalid credentials' });
+
+    const validPassword = await bcrypt.compare(password, user.password);
+    if (!validPassword) return res.status(401).json({ error: 'Invalid credentials' });
+
+    const token = jwt.sign({ id: user.id, username: user.username, role: user.role }, JWT_SECRET);
+    res.json({ 
+      token, 
+      user: { 
+        id: user.id, 
+        username: user.username, 
+        email: user.email, 
+        role: user.role 
+      } 
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// DEVICE ROUTES
+app.post('/api/devices/register', authenticateToken, async (req, res) => {
+  const { deviceId, deviceName, model } = req.body;
+  
+  if (!deviceId || !deviceName) {
+    return res.status(400).json({ error: 'Device ID and name required' });
+  }
+
+  try {
+    await db.query(
+      'INSERT INTO devices (id, name, user_id, model) VALUES ($1, $2, $3, $4)',
+      [deviceId, deviceName, req.user.id, model || 'ESP32-Switch']
+    );
+    res.json({ message: 'Device registered successfully', deviceId });
+  } catch (error) {
+    if (error.code === '23505') {
+      return res.status(400).json({ error: 'Device already registered' });
+    }
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+app.get('/api/devices', authenticateToken, async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT d.*, ds.switch_state, ds.current_reading, ds.voltage 
+       FROM devices d 
+       LEFT JOIN LATERAL (
+         SELECT switch_state, current_reading, voltage 
+         FROM device_states 
+         WHERE device_id = d.id 
+         ORDER BY timestamp DESC LIMIT 1
+       ) ds ON true
+       WHERE d.user_id = $1 
+       ORDER BY d.created_at DESC`,
+      [req.user.id]
+    );
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// ESP32 HEARTBEAT ENDPOINT
+app.post('/api/devices/:deviceId/heartbeat', async (req, res) => {
+  const { deviceId } = req.params;
+  const { switch_state, current_reading, voltage } = req.body;
+
+  try {
+    await db.query('UPDATE devices SET is_online = true, last_seen = CURRENT_TIMESTAMP WHERE id = $1', [deviceId]);
+    await db.query('INSERT INTO device_states (device_id, switch_state, current_reading, voltage) VALUES ($1, $2, $3, $4)',
+                   [deviceId, switch_state, current_reading || 0, voltage || 0]);
+    res.json({ message: 'Heartbeat received' });
+  } catch (error) {
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// ESP32 COMMAND POLLING
+app.get('/api/devices/:deviceId/commands', async (req, res) => {
+  const { deviceId } = req.params;
+
+  try {
+    const result = await db.query(
+      'SELECT * FROM commands WHERE device_id = $1 AND status = $2 ORDER BY created_at ASC',
+      [deviceId, 'pending']
+    );
+    
+    if (result.rows.length > 0) {
+      const commandIds = result.rows.map(cmd => cmd.id);
+      await db.query(
+        `UPDATE commands SET status = 'sent' WHERE id = ANY($1)`,
+        [commandIds]
+      );
+    }
+    
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// DEVICE CONTROL
+app.post('/api/devices/:deviceId/control', authenticateToken, async (req, res) => {
+  const { deviceId } = req.params;
+  const { action, value } = req.body;
+
+  try {
+    const result = await db.query(
+      'SELECT * FROM devices WHERE id = $1 AND (user_id = $2 OR $3 = $4)',
+      [deviceId, req.user.id, req.user.role, 'admin']
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Device not found or access denied' });
+    }
+
+    const sent = sendCommandToDevice(deviceId, { action, value });
+    
+    if (sent) {
+      res.json({ message: 'Command sent instantly', method: 'websocket' });
+    } else {
+      const commandResult = await db.query(
+        'INSERT INTO commands (device_id, command_type, command_value) VALUES ($1, $2, $3) RETURNING id',
+        [deviceId, action, value?.toString()]
+      );
+      res.json({ message: 'Command queued for offline device', commandId: commandResult.rows[0].id, method: 'queue' });
+    }
+  } catch (error) {
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// GET DEVICE TELEMETRY
+app.get('/api/devices/:deviceId/telemetry', authenticateToken, async (req, res) => {
+  const { deviceId } = req.params;
+  const { hours = 24 } = req.query;
+
+  try {
+    const result = await db.query(
+      `SELECT * FROM device_states 
+       WHERE device_id = $1 AND timestamp >= NOW() - INTERVAL '${hours} hours'
+       ORDER BY timestamp DESC LIMIT 100`,
+      [deviceId]
+    );
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// DELETE DEVICE
+app.delete('/api/devices/:deviceId', authenticateToken, async (req, res) => {
+  const { deviceId } = req.params;
+
+  try {
+    const result = await db.query('SELECT * FROM devices WHERE id = $1 AND user_id = $2', [deviceId, req.user.id]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Device not found' });
+    }
+
+    await db.query('DELETE FROM devices WHERE id = $1', [deviceId]);
+    res.json({ message: 'Device deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// ADMIN ROUTES
+app.get('/api/admin/devices', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT d.*, u.username, ds.switch_state, ds.current_reading, ds.voltage 
+       FROM devices d 
+       JOIN users u ON d.user_id = u.id
+       LEFT JOIN LATERAL (
+         SELECT switch_state, current_reading, voltage 
+         FROM device_states 
+         WHERE device_id = d.id 
+         ORDER BY timestamp DESC LIMIT 1
+       ) ds ON true
+       ORDER BY d.created_at DESC`
+    );
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+app.post('/api/admin/devices/:deviceId/control', authenticateToken, requireAdmin, async (req, res) => {
+  const { deviceId } = req.params;
+  const { action, value } = req.body;
+
+  try {
+    const sent = sendCommandToDevice(deviceId, { action, value });
+    
+    if (sent) {
+      res.json({ message: 'Admin command sent instantly', method: 'websocket' });
+    } else {
+      const commandResult = await db.query(
+        'INSERT INTO commands (device_id, command_type, command_value) VALUES ($1, $2, $3) RETURNING id',
+        [deviceId, action, value?.toString()]
+      );
+      res.json({ message: 'Admin command queued', commandId: commandResult.rows[0].id, method: 'queue' });
+    }
+  } catch (error) {
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// Health check
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'OK', timestamp: new Date().toISOString() });
+});
+
+// Start HTTP server with WebSocket support
+server.listen(PORT, () => {
+  console.log(`HTTP Server with WebSocket running on port ${PORT}`);
+});
+
+// Cleanup offline devices every 30 seconds
+setInterval(async () => {
+  try {
+    const result = await db.query(
+      "UPDATE devices SET is_online = false WHERE last_seen < NOW() - INTERVAL '1 minute' AND is_online = true RETURNING id"
+    );
+    if (result.rows.length > 0) {
+      console.log(`Marked ${result.rows.length} devices as offline`);
+      
+      // Broadcast offline status to users
+      result.rows.forEach(device => {
+        broadcastDeviceStatus(device.id, false);
+      });
+    }
+  } catch (error) {
+    console.error('Error updating offline devices:', error);
+  }
+}, 30 * 1000);
