@@ -24,9 +24,12 @@ const DeviceChart = ({ device, onClose }) => {
         const data = await response.json();
         const formattedData = data.map(item => ({
           time: new Date(item.timestamp).toLocaleTimeString(),
-          current: item.current_reading,
-          voltage: item.voltage,
-          state: item.switch_state ? 'ON' : 'OFF'
+          current: parseFloat(item.current_reading) || 0,
+          voltage: parseFloat(item.voltage) || 0,
+          // FIX: Use numeric values (0 or 1) instead of strings
+          state: item.switch_state ? 1 : 0,
+          // Keep the original boolean for tooltip display
+          stateText: item.switch_state ? 'ON' : 'OFF'
         }));
         setTelemetryData(formattedData.reverse());
       }
@@ -34,6 +37,28 @@ const DeviceChart = ({ device, onClose }) => {
       console.error('Error fetching telemetry:', error);
     }
     setLoading(false);
+  };
+
+  // Custom tooltip component for better state display
+  const CustomTooltip = ({ active, payload, label }) => {
+    if (active && payload && payload.length) {
+      const data = payload[0].payload;
+      return (
+        <div style={{ 
+          backgroundColor: 'white', 
+          padding: '10px', 
+          border: '1px solid #ccc',
+          borderRadius: '4px',
+          boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+        }}>
+          <p style={{ margin: 0 }}><strong>Time:</strong> {label}</p>
+          <p style={{ margin: 0, color: payload[0].color }}>
+            <strong>State:</strong> {data.stateText}
+          </p>
+        </div>
+      );
+    }
+    return null;
   };
 
   return (
@@ -56,6 +81,10 @@ const DeviceChart = ({ device, onClose }) => {
 
         {loading ? (
           <div className="loading">Loading chart data...</div>
+        ) : telemetryData.length === 0 ? (
+          <div style={{ padding: '20px', textAlign: 'center' }}>
+            <p>No telemetry data available for the selected time range.</p>
+          </div>
         ) : (
           <div className="chart-container">
             <h4>Current Reading (A)</h4>
@@ -64,12 +93,16 @@ const DeviceChart = ({ device, onClose }) => {
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="time" />
                 <YAxis />
-                <Tooltip />
+                <Tooltip 
+                  formatter={(value) => [value.toFixed(2) + ' A', 'Current']}
+                  labelStyle={{ color: '#333' }}
+                />
                 <Line 
                   type="monotone" 
                   dataKey="current" 
                   stroke="#2196F3" 
                   strokeWidth={2}
+                  dot={{ r: 2 }}
                 />
               </LineChart>
             </ResponsiveContainer>
@@ -79,13 +112,18 @@ const DeviceChart = ({ device, onClose }) => {
               <LineChart data={telemetryData}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="time" />
-                <YAxis domain={[0, 1]} tickFormatter={(value) => value === 1 ? 'ON' : 'OFF'} />
-                <Tooltip />
+                <YAxis 
+                  domain={[0, 1]} 
+                  ticks={[0, 1]}
+                  tickFormatter={(value) => value === 1 ? 'ON' : 'OFF'}
+                />
+                <Tooltip content={<CustomTooltip />} />
                 <Line 
                   type="stepAfter" 
                   dataKey="state" 
                   stroke="#4CAF50" 
-                  strokeWidth={2}
+                  strokeWidth={3}
+                  dot={{ r: 4 }}
                 />
               </LineChart>
             </ResponsiveContainer>
