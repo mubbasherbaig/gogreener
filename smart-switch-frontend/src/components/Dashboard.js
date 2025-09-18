@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import DeviceCard from './DeviceCard';
 import AddDevice from './AddDevice';
 import DeviceChart from './DeviceChart';
+import { WS_BASE_URL } from '../config';
 
 const Dashboard = () => {
   const [devices, setDevices] = useState([]);
@@ -26,7 +27,7 @@ const Dashboard = () => {
     const token = localStorage.getItem('token');
     if (!token) return;
 
-    const wsUrl = `ws://localhost:3000`;
+    const wsUrl = WS_BASE_URL;
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 

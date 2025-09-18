@@ -46,7 +46,10 @@ app.use('/api/', rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100
 }));
-
+app.use(cors({
+  origin: process.env.FRONTEND_URL || 'http://localhost:3001',
+  credentials: true
+}));
 // WebSocket connection handler
 wss.on('connection', (ws, req) => {
   ws.on('message', async (data) => {
@@ -266,7 +269,7 @@ app.post('/api/devices/register', authenticateToken, async (req, res) => {
   }
 });
 
-app.get('/api/devices', authenticateToken, async (req, res) => {
+app.get(`${process.env.REACT_APP_API_URL}/api/devices`, authenticateToken, async (req, res) => {
   try {
     const result = await db.query(
       `SELECT d.*, ds.switch_state, ds.current_reading, ds.voltage 
