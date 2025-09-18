@@ -79,11 +79,7 @@ const DeviceChart = ({ device, onClose }) => {
               <LineChart data={telemetryData}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="time" />
-                <YAxis 
-                  domain={[0, 1]} 
-                  ticks={[0, 1]}
-                  tickFormatter={(value) => value === 1 ? 'ON' : 'OFF'} 
-                />
+                <YAxis domain={[0, 1]} tickFormatter={(value) => value === 1 ? 'ON' : 'OFF'} />
                 <Tooltip />
                 <Line 
                   type="stepAfter" 
