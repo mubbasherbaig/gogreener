@@ -95,7 +95,7 @@ const AdminPanel = () => {
                     {device.switch_state ? 'ON' : 'OFF'}
                   </span>
                 </td>
-                <td>{(device.current_reading || 0).toFixed(2)}</td>
+                <td>{(parseFloat(device.current_reading) || 0).toFixed(2)}</td>
                 <td>
                   {device.last_seen ? new Date(device.last_seen).toLocaleString() : 'Never'}
                 </td>
