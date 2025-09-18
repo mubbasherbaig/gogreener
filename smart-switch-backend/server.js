@@ -47,8 +47,14 @@ app.use('/api/', rateLimit({
   max: 100
 }));
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3001',
-  credentials: true
+  origin: [
+    process.env.FRONTEND_URL || 'http://localhost:3001',
+    'https://gogreener.vercel.app', // Replace with your actual Vercel URL
+    'http://localhost:3001' // For local development
+  ],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
 // WebSocket connection handler
 wss.on('connection', (ws, req) => {
@@ -269,8 +275,7 @@ app.post('/api/devices/register', authenticateToken, async (req, res) => {
   }
 });
 
-app.get(`${process.env.REACT_APP_API_URL}/api/devices`, authenticateToken, async (req, res) => {
-  try {
+app.get('/api/devices', authenticateToken, async (req, res) => {  try {
     const result = await db.query(
       `SELECT d.*, ds.switch_state, ds.current_reading, ds.voltage 
        FROM devices d 
