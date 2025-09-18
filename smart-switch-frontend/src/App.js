@@ -4,6 +4,7 @@ import Login from './components/Login';
 import Dashboard from './components/Dashboard';
 import AdminPanel from './components/AdminPanel';
 import './App.css';
+import logo from './assets/logo.png';
 
 function App() {
   const [user, setUser] = useState(null);
@@ -41,7 +42,10 @@ function App() {
         {user && (
           <nav className="navbar">
             <div className="nav-content">
-              <h1>Smart Switch Control</h1>
+              <div style={{display: 'flex', alignItems: 'center', gap: '10px'}}>
+                <img src={logo} alt="Smart Switch" style={{height: '40px'}} />
+                <h1>Smart Switch Control</h1>
+              </div>
               <div className="nav-right">
                 <span>Welcome, {user.username}</span>
                 {user.role === 'admin' && (
