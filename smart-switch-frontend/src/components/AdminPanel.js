@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { API_BASE_URL } from '../config';
 
 const AdminPanel = () => {
   const [devices, setDevices] = useState([]);
@@ -14,7 +15,7 @@ const AdminPanel = () => {
   const fetchAllDevices = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch('/api/admin/devices', {
+      const response = await fetch(`${API_BASE_URL}/api/admin/devices`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -33,7 +34,7 @@ const AdminPanel = () => {
   const controlDevice = async (deviceId, action, value) => {
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch(`/api/admin/devices/${deviceId}/control`, {
+      const response = await fetch(`${API_BASE_URL}/api/admin/devices/${deviceId}/control`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

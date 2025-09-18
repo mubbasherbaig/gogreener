@@ -3,6 +3,7 @@ import DeviceCard from './DeviceCard';
 import AddDevice from './AddDevice';
 import DeviceChart from './DeviceChart';
 import { WS_BASE_URL } from '../config';
+import { API_BASE_URL } from '../config';
 
 const Dashboard = () => {
   const [devices, setDevices] = useState([]);
@@ -118,7 +119,7 @@ const Dashboard = () => {
 
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch(`/api/devices/${deviceId}/control`, {
+      const response = await fetch(`${API_BASE_URL}/api/devices/${deviceId}/control`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -140,7 +141,7 @@ const Dashboard = () => {
   const deleteDevice = async (deviceId) => {
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch(`/api/devices/${deviceId}`, {
+      const response = await fetch(`${API_BASE_URL}/api/devices/${deviceId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`

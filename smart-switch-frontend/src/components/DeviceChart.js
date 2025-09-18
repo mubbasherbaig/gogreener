@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { API_BASE_URL } from '../config';
 
 const DeviceChart = ({ device, onClose }) => {
   const [telemetryData, setTelemetryData] = useState([]);
@@ -13,7 +14,7 @@ const DeviceChart = ({ device, onClose }) => {
   const fetchTelemetry = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch(`/api/devices/${device.id}/telemetry?hours=${timeRange}`, {
+      const response = await fetch(`${API_BASE_URL}/api/devices/${device.id}/telemetry?hours=${timeRange}`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }

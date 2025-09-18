@@ -23,7 +23,7 @@ const Login = ({ onLogin }) => {
     setError('');
 
     try {
-      const url = isSignup ? '/api/auth/signup' : '/api/auth/login';
+      const url = isSignup ? `${API_BASE_URL}/api/auth/signup` : `${API_BASE_URL}/api/auth/login`;
       const body = isSignup ? formData : { email: formData.email, password: formData.password };
 
       const response = await fetch(url, {

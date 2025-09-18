@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { API_BASE_URL } from '../config';
 
 const AddDevice = ({ onClose, onDeviceAdded }) => {
   const [deviceData, setDeviceData] = useState({
@@ -33,7 +34,7 @@ const AddDevice = ({ onClose, onDeviceAdded }) => {
 
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch('/api/devices/register', {
+      const response = await fetch(`${API_BASE_URL}/api/devices/register`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
