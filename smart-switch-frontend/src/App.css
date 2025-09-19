@@ -771,3 +771,261 @@ input:checked + .slider:after {
     overflow-x: auto;
   }
 }
+
+/* Add these styles to your existing App.css file */
+
+/* Admin Controls - Search and Filter Section */
+.admin-controls {
+  background: white;
+  padding: 20px;
+  border-radius: 12px;
+  margin-bottom: 20px;
+  box-shadow: 0 2px 8px rgba(45, 55, 72, 0.08);
+  border: 1px solid #e2e8f0;
+}
+
+.search-section {
+  margin-bottom: 20px;
+}
+
+.search-input-group {
+  position: relative;
+  max-width: 500px;
+}
+
+.search-input {
+  width: 100%;
+  padding: 12px 40px 12px 16px;
+  border: 2px solid #cbd5e1;
+  border-radius: 8px;
+  font-size: 16px;
+  transition: all 0.3s ease;
+  background: #f8fafc;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: #3182ce;
+  background: white;
+  box-shadow: 0 0 0 3px rgba(49, 130, 206, 0.1);
+}
+
+.clear-search-btn {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #718096;
+  font-size: 16px;
+  padding: 4px;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.clear-search-btn:hover {
+  background: #e2e8f0;
+  color: #2d3748;
+}
+
+.filter-section {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.filter-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.filter-group label {
+  font-weight: 500;
+  color: #2d3748;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.filter-select {
+  padding: 8px 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: white;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-width: 120px;
+}
+
+.filter-select:focus {
+  outline: none;
+  border-color: #3182ce;
+  box-shadow: 0 0 0 2px rgba(49, 130, 206, 0.1);
+}
+
+.filter-select:hover {
+  border-color: #a0aec0;
+}
+
+.sort-order-btn {
+  background: linear-gradient(135deg, #4a5568, #2d3748);
+  color: white;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: bold;
+  transition: all 0.3s ease;
+  min-width: 40px;
+}
+
+.sort-order-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 3px 8px rgba(74, 85, 104, 0.3);
+}
+
+.clear-filters-btn {
+  background: linear-gradient(135deg, #e53e3e, #c53030);
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.3s ease;
+  white-space: nowrap;
+}
+
+.clear-filters-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 3px 8px rgba(229, 62, 62, 0.3);
+}
+
+/* Search Info */
+.search-info {
+  background: #f0f9ff;
+  color: #0369a1;
+  padding: 12px 16px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  border: 1px solid #bae6fd;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+/* Enhanced Stats */
+.stats .filtered-count {
+  color: #3182ce;
+  font-weight: 600;
+  padding: 4px 8px;
+  background: #dbeafe;
+  border-radius: 4px;
+}
+
+/* Table Cell Styling */
+.device-id-cell {
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  background: #f8fafc;
+  padding: 4px 8px;
+  border-radius: 4px;
+  color: #4a5568;
+}
+
+.device-name-cell {
+  font-weight: 500;
+  color: #2d3748;
+}
+
+.username-cell {
+  color: #3182ce;
+  font-weight: 500;
+}
+
+/* No Results */
+.no-results {
+  text-align: center;
+  padding: 60px;
+  background: white;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  color: #718096;
+}
+
+.no-results h3 {
+  color: #2d3748;
+  margin-bottom: 10px;
+}
+
+.no-results p {
+  margin-bottom: 20px;
+}
+
+/* Enhanced Table Styles */
+.admin-devices-table table tbody tr:hover {
+  background: #f8fafc;
+  transition: background-color 0.2s ease;
+}
+
+.admin-devices-table table tbody tr td {
+  vertical-align: middle;
+}
+
+/* Responsive Design for Admin Controls */
+@media (max-width: 768px) {
+  .admin-controls {
+    padding: 15px;
+  }
+
+  .filter-section {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 15px;
+  }
+
+  .filter-group {
+    justify-content: space-between;
+  }
+
+  .filter-select {
+    min-width: auto;
+    flex: 1;
+  }
+
+  .search-input {
+    font-size: 16px; /* Prevents zoom on iOS */
+  }
+
+  .sort-order-btn,
+  .clear-filters-btn {
+    width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .admin-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 15px;
+  }
+
+  .stats {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .admin-devices-table {
+    font-size: 12px;
+  }
+
+  .admin-devices-table th,
+  .admin-devices-table td {
+    padding: 8px 4px;
+  }
+}
