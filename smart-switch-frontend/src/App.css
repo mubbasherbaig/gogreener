@@ -603,7 +603,13 @@ input:checked + .slider:after {
 
 /* Chart Section */
 .chart-container {
-  padding: 20px;
+  width: 100%;
+  max-width: 750px;   /* controls how wide the chart can grow */
+  height: 400px;      /* fixed height so it won’t collapse */
+  margin: 0 auto;     /* center horizontally */
+  display: flex;
+  justify-content: center;
+  align-items: center;
 }
 
 .chart-container h4 {
