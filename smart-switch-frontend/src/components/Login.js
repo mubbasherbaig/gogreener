@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { API_BASE_URL } from '../config';
-import logo from '../assets/logo.png';
+import logo from '../assets/logo2.png';
 
 const Login = ({ onLogin }) => {
   const [isSignup, setIsSignup] = useState(false);
@@ -54,7 +54,7 @@ const Login = ({ onLogin }) => {
     <div className="login-container">
       <div className="login-form">
       <div style={{textAlign: 'center'}}>
-        <img src={logo} alt="Logo" style={{height: '120px'}} />
+        <img src={logo} alt="Logo" style={{height: '80px'}} />
       </div>
         <h2>{isSignup ? 'Sign Up' : 'Login'}</h2>
         
