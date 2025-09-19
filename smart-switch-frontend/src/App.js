@@ -42,14 +42,17 @@ function App() {
         {user && (
           <nav className="navbar">
             <div className="nav-content">
-              <div style={{display: 'flex', alignItems: 'left', gap: '10px'}}>
+              <div style={{display: 'flex', alignItems: 'center', gap: '10px'}}>
                 <img src={logo} alt="Smart Switch" style={{height: '100px'}} />
-                <h1></h1>
+                <h1>Smart Switch Control</h1>
               </div>
               <div className="nav-right">
                 <span>Welcome, {user.username}</span>
+                {/* Remove the admin panel link since admins go directly to admin panel */}
                 {user.role === 'admin' && (
-                  <a href="/admin" className="admin-link">Admin Panel</a>
+                  <span style={{ color: '#3182ce', fontWeight: 'bold' }}>
+                    (Administrator)
+                  </span>
                 )}
                 <button onClick={handleLogout} className="logout-btn">Logout</button>
               </div>
@@ -64,7 +67,17 @@ function App() {
           />
           <Route 
             path="/" 
-            element={user ? <Dashboard /> : <Navigate to="/login" />} 
+            element={
+              user ? (
+                user.role === 'admin' ? (
+                  <AdminPanel />
+                ) : (
+                  <Dashboard />
+                )
+              ) : (
+                <Navigate to="/login" />
+              )
+            } 
           />
           <Route 
             path="/admin" 
