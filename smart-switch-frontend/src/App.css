@@ -263,81 +263,12 @@ body {
   gap: 10px;
 }
 
-/* Toggle Switch - Classy 3D Look */
-.switch {
-  position: relative;
-  display: inline-block;
-  width: 80px;
-  height: 40px;
-  cursor: pointer;
-}
-
-.switch input {
-  opacity: 0;
-  width: 0;
-  height: 0;
-  position: absolute;
-  z-index: 1;
-  cursor: pointer;
-}
-
-.slider {
-  position: absolute;
-  cursor: pointer;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-  border-radius: 40px;
-  transition: all 0.3s ease;
-  box-shadow: 
-    0 8px 16px rgba(0,0,0,0.1),
-    0 2px 4px rgba(0,0,0,0.1),
-    inset 0 1px 0 rgba(255,255,255,0.3);
-  border: 1px solid rgba(255,255,255,0.2);
-  z-index: 0;
-}
-
-.slider:before {
-  position: absolute;
-  content: "";
-  height: 32px;
-  width: 32px;
-  left: 4px;
-  bottom: 4px;
-  background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
-  border-radius: 50%;
-  transition: all 0.3s ease;
-  box-shadow: 
-    0 4px 8px rgba(0,0,0,0.15),
-    0 1px 2px rgba(0,0,0,0.1),
-    inset 0 1px 0 rgba(255,255,255,0.8);
-  border: 1px solid rgba(0,0,0,0.05);
-  pointer-events: none;
-}
-
-.slider:after {
-  position: absolute;
-  content: 'OFF';
-  color: #64748b;
-  font-size: 10px;
-  font-weight: 600;
-  text-shadow: 0 1px 1px rgba(255,255,255,0.8);
-  top: 50%;
-  left: 44px;
-  transform: translateY(-50%);
-  transition: all 0.3s ease;
-  pointer-events: none;
-  letter-spacing: 0.5px;
-}
-
-/* CHECKED STATE - Classy Green */
+/* CHECKED STATE - Green for ON */
 input:checked + .slider {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
   box-shadow: 
-    0 8px 16px rgba(102,126,234,0.3),
-    0 2px 4px rgba(102,126,234,0.2),
+    0 8px 16px rgba(16,185,129,0.3),
+    0 2px 4px rgba(16,185,129,0.2),
     inset 0 1px 0 rgba(255,255,255,0.2);
 }
 
@@ -357,68 +288,57 @@ input:checked + .slider:after {
   text-shadow: 0 1px 2px rgba(0,0,0,0.3);
 }
 
-/* HOVER EFFECTS */
+/* UNCHECKED STATE - Red tint for OFF */
+.slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, #f87171 0%, #dc2626 100%);
+  border-radius: 40px;
+  transition: all 0.3s ease;
+  box-shadow: 
+    0 8px 16px rgba(248,113,113,0.2),
+    0 2px 4px rgba(248,113,113,0.1),
+    inset 0 1px 0 rgba(255,255,255,0.3);
+  border: 1px solid rgba(255,255,255,0.2);
+  z-index: 0;
+}
+
+/* HOVER EFFECTS - Updated for Green/Red */
 .switch:hover .slider:not(input:disabled + .slider) {
   transform: translateY(-1px);
   box-shadow: 
-    0 12px 24px rgba(0,0,0,0.15),
-    0 4px 8px rgba(0,0,0,0.1),
+    0 12px 24px rgba(248,113,113,0.25),
+    0 4px 8px rgba(248,113,113,0.15),
     inset 0 1px 0 rgba(255,255,255,0.4);
 }
 
 .switch:hover input:checked + .slider {
   transform: translateY(-1px);
   box-shadow: 
-    0 12px 24px rgba(102,126,234,0.4),
-    0 4px 8px rgba(102,126,234,0.3),
+    0 12px 24px rgba(16,185,129,0.4),
+    0 4px 8px rgba(16,185,129,0.3),
     inset 0 1px 0 rgba(255,255,255,0.3);
 }
 
-.switch:hover .slider:before {
-  box-shadow: 
-    0 6px 12px rgba(0,0,0,0.2),
-    0 2px 4px rgba(0,0,0,0.1),
-    inset 0 1px 0 rgba(255,255,255,0.9);
-}
-
-/* ACTIVE STATE */
+/* ACTIVE STATE - Updated for Green/Red */
 .switch:active .slider:not(input:disabled + .slider) {
   transform: translateY(0px);
   box-shadow: 
-    0 4px 8px rgba(0,0,0,0.2),
-    0 1px 2px rgba(0,0,0,0.1),
+    0 4px 8px rgba(248,113,113,0.3),
+    0 1px 2px rgba(248,113,113,0.2),
     inset 0 1px 0 rgba(255,255,255,0.2);
 }
 
 .switch:active input:checked + .slider {
   transform: translateY(0px);
   box-shadow: 
-    0 4px 8px rgba(102,126,234,0.4),
-    0 1px 2px rgba(102,126,234,0.2),
+    0 4px 8px rgba(16,185,129,0.4),
+    0 1px 2px rgba(16,185,129,0.2),
     inset 0 1px 0 rgba(255,255,255,0.2);
-}
-
-/* DISABLED STATE */
-input:disabled + .slider {
-  opacity: 0.6;
-  cursor: not-allowed !important;
-  background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
-  box-shadow: 
-    0 2px 4px rgba(0,0,0,0.05),
-    inset 0 1px 0 rgba(255,255,255,0.5);
-  transform: none !important;
-}
-
-input:disabled + .slider:before {
-  background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
-  box-shadow: 
-    0 2px 4px rgba(0,0,0,0.1),
-    inset 0 1px 0 rgba(255,255,255,0.8);
-}
-
-input:disabled + .slider:after {
-  color: #94a3b8;
-  text-shadow: 0 1px 1px rgba(255,255,255,0.8);
 }
 
 .chart-btn {
