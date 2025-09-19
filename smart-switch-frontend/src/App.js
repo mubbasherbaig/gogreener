@@ -42,9 +42,9 @@ function App() {
         {user && (
           <nav className="navbar">
             <div className="nav-content">
-              <div style={{display: 'flex', alignItems: 'center', gap: '10px'}}>
+              <div style={{display: 'flex', alignItems: 'left', gap: '10px'}}>
                 <img src={logo} alt="Smart Switch" style={{height: '100px'}} />
-                <h1>Smart Switch Control</h1>
+                <h1></h1>
               </div>
               <div className="nav-right">
                 <span>Welcome, {user.username}</span>
