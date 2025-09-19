@@ -344,13 +344,13 @@ body {
 }
 
 .status.online {
-  background: #bee3f8; /* Light blue */
-  color: #3182ce; /* Blue accent */
+  background: #48fb38;
+  color: #fefefe;
 }
 
 .status.offline {
-  background: #f7fafc;
-  color: #718096;
+  background: #e91d1d;
+  color: #fefefe;
 }
 
 .device-info p {
