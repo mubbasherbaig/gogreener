@@ -56,14 +56,14 @@ body {
 }
 
 .nav-logo-section img {
-  height: clamp(40px, 6vw, 100px); /* Reduced from clamp(60px, 8vw, 100px) */
+  height: clamp(30px, 6vw, 80px); /* Lowered min from 40px and max from 100px for better scaling */
   width: auto;
-  max-width: 120px; /* Reduced from 150px */
+  max-width: 100px; /* Reduced from 120px to prevent overflow */
 }
 
 .nav-content h1 {
   color: #ffffff;
-  font-size: clamp(18px, 4vw, 24px); /* Responsive text */
+  font-size: clamp(16px, 3.5vw, 22px); /* Slightly reduced for mobile harmony */
   white-space: nowrap;
 }
 
@@ -1024,14 +1024,14 @@ input:checked + .slider:after {
 @media (max-width: 768px) {
   /* Further reduce logo on very small screens */
   .nav-logo-section img {
-    height: 30px !important;
-    max-width: 80px !important;
+    height: 24px !important; /* Reduced from 30px for smaller mobiles */
+    max-width: 60px !important; /* Reduced from 80px to fit better */
   }
   
   /* Ensure navbar doesn't overflow */
   .nav-content {
-    padding: 0 0.5rem;
-    overflow: hidden;
+    padding: 0 0.75rem; /* Slightly more padding for touch */
+    gap: 0.5rem; /* Tighter gap on mobile */
   }
   
   /* Fix toggle switch for mobile */
@@ -1065,13 +1065,12 @@ input:checked + .slider:after {
 @media (max-width: 480px) {
   /* Extra small screens */
   .nav-logo-section img {
-    height: 25px !important;
-    max-width: 70px !important;
+    height: 20px !important; /* Reduced from 25px for very small phones */
+    max-width: 50px !important; /* Reduced from 70px */
   }
   
-  .nav-right span {
-    max-width: 80px;
-    font-size: 11px;
+  .nav-right {
+    gap: 8px; /* Tighter for small screens */
   }
   
   /* Smaller toggle for very small screens */
