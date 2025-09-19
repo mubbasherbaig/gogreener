@@ -283,39 +283,35 @@ body {
 
 .slider {
   position: absolute;
-  cursor: pointer;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
   border-radius: 40px;
+  background: #e0e0e0; /* soft neutral background */
   transition: all 0.3s ease;
-  box-shadow: 
-    0 8px 16px rgba(0,0,0,0.1),
-    0 2px 4px rgba(0,0,0,0.1),
-    inset 0 1px 0 rgba(255,255,255,0.3);
-  border: 1px solid rgba(255,255,255,0.2);
-  z-index: 0;
+
+  /* dual shadow for neumorphism */
+  box-shadow: inset 4px 4px 8px #c0c0c0,
+              inset -4px -4px 8px #ffffff;
 }
 
 .slider:before {
-  position: absolute;
   content: "";
+  position: absolute;
   height: 32px;
   width: 32px;
   left: 4px;
   bottom: 4px;
-  background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
   border-radius: 50%;
+  background: #e0e0e0;
+
+  /* raised effect */
+  box-shadow: 4px 4px 8px #c0c0c0,
+              -4px -4px 8px #ffffff;
   transition: all 0.3s ease;
-  box-shadow: 
-    0 4px 8px rgba(0,0,0,0.15),
-    0 1px 2px rgba(0,0,0,0.1),
-    inset 0 1px 0 rgba(255,255,255,0.8);
-  border: 1px solid rgba(0,0,0,0.05);
-  pointer-events: none;
 }
+
 
 .slider:after {
   position: absolute;
@@ -332,22 +328,18 @@ body {
   letter-spacing: 0.5px;
 }
 
-/* CHECKED STATE - Classy Green */
 input:checked + .slider {
-  background: linear-gradient(135deg, #66ea7c 0%, #4ba268 100%);
-  box-shadow: 
-    0 8px 16px rgba(102, 234, 126, 0.3),
-    0 2px 4px rgba(102, 234, 131, 0.2),
-    inset 0 1px 0 rgba(255,255,255,0.2);
+  box-shadow: inset 4px 4px 8px #c0c0c0,
+              inset -4px -4px 8px #ffffff;
+  background: #d1d9e6; /* slight color shift */
 }
 
 input:checked + .slider:before {
   transform: translateX(36px);
-  background: linear-gradient(135deg, #e35d5d 0%, #ad4949 100%);
-  box-shadow: 
-    0 6px 12px rgba(214, 71, 71, 0.2),
-    0 2px 4px rgba(166, 57, 57, 0.1),
-    inset 0 1px 0 rgba(255,255,255,0.9);
+
+  /* adjust shadows for active look */
+  box-shadow: 2px 2px 6px #c0c0c0,
+              -2px -2px 6px #ffffff;
 }
 
 input:checked + .slider:after {
