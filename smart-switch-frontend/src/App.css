@@ -334,19 +334,19 @@ body {
 
 /* CHECKED STATE - Classy Green */
 input:checked + .slider {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #66ea7c 0%, #4ba268 100%);
   box-shadow: 
-    0 8px 16px rgba(102,126,234,0.3),
-    0 2px 4px rgba(102,126,234,0.2),
+    0 8px 16px rgba(102, 234, 126, 0.3),
+    0 2px 4px rgba(102, 234, 131, 0.2),
     inset 0 1px 0 rgba(255,255,255,0.2);
 }
 
 input:checked + .slider:before {
   transform: translateX(36px);
-  background: linear-gradient(135deg, #ffffff 0%, #f1f5f9 100%);
+  background: linear-gradient(135deg, #e35d5d 0%, #ad4949 100%);
   box-shadow: 
-    0 6px 12px rgba(0,0,0,0.2),
-    0 2px 4px rgba(0,0,0,0.1),
+    0 6px 12px rgba(214, 71, 71, 0.2),
+    0 2px 4px rgba(166, 57, 57, 0.1),
     inset 0 1px 0 rgba(255,255,255,0.9);
 }
 
