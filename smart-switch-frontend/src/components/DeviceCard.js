@@ -47,9 +47,10 @@ const DeviceCard = ({ device, onControl, onViewChart, onDelete }) => {
             />
             <span className="slider"></span>
           </label>
-          <span className="switch-label">
+          {/* Remove or comment out this span since we have ON/OFF in the toggle now */}
+          {/* <span className="switch-label">
             {switchState ? 'ON' : 'OFF'}
-          </span>
+          </span> */}
         </div>
         
         <button 
