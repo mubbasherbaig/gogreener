@@ -56,9 +56,9 @@ body {
 }
 
 .nav-logo-section img {
-  height: clamp(60px, 8vw, 100px); /* Responsive logo size */
+  height: clamp(40px, 6vw, 100px); /* Reduced from clamp(60px, 8vw, 100px) */
   width: auto;
-  max-width: 150px;
+  max-width: 120px; /* Reduced from 150px */
 }
 
 .nav-content h1 {
@@ -426,8 +426,8 @@ body {
 .switch {
   position: relative;
   display: inline-block;
-  width: clamp(60px, 15vw, 80px);
-  height: clamp(30px, 8vw, 40px);
+  width: clamp(60px, 12vw, 80px); /* More conservative scaling */
+  height: clamp(30px, 6vw, 40px);  /* More conservative scaling */
   cursor: pointer;
   flex-shrink: 0;
 }
@@ -460,8 +460,8 @@ body {
   position: absolute;
   height: calc(100% - 8px);
   width: calc(100% - 8px);
-  max-height: 32px;
-  max-width: 32px;
+  max-height: 24px; /* Reduced from 32px for mobile */
+  max-width: 24px;  /* Reduced from 32px for mobile */
   left: 4px;
   bottom: 4px;
   border-radius: 50%;
@@ -1020,96 +1020,87 @@ input:checked + .slider:after {
   color: #2d3748;
 }
 
-/* MOBILE-SPECIFIC OPTIMIZATIONS */
+/* Mobile-specific overrides */
 @media (max-width: 768px) {
+  /* Further reduce logo on very small screens */
+  .nav-logo-section img {
+    height: clamp(35px, 8vw, 50px);
+    max-width: 100px;
+  }
+  
+  /* Ensure navbar doesn't overflow */
   .nav-content {
-    justify-content: center;
-    text-align: center;
+    padding: 0 0.5rem;
+    overflow: hidden;
   }
-
-  .nav-right {
-    order: 3;
-    width: 100%;
-    justify-content: center;
-    margin-top: 10px;
-  }
-
-  .dashboard-header {
-    flex-direction: column;
-    align-items: stretch;
-    text-align: center;
-  }
-
-  .dashboard-controls {
-    justify-content: center;
-  }
-
-  .device-controls {
-    flex-direction: column;
-    gap: 15px;
-  }
-
-  .switch-control {
-    justify-content: center;
-  }
-
-  .filter-section {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 15px;
-  }
-
-  .filter-group {
-    justify-content: space-between;
-  }
-
-  .modal-actions {
-    flex-direction: column;
-  }
-
-  .modal-actions button {
-    width: 100%;
-  }
-
-  .device-id-input {
-    flex-direction: column;
-  }
-
-  .device-id-input input {
-    min-width: auto;
-  }
-}
-
-@media (max-width: 480px) {
-  .admin-header {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 10px;
-  }
-
-  .stats {
-    flex-direction: column;
-    gap: 8px;
-    text-align: center;
-  }
-
-  .chart-modal {
-    margin: 10px;
-    max-height: calc(100vh - 20px);
-  }
-
-  .admin-devices-table th,
-  .admin-devices-table td {
-    padding: 6px 4px;
-  }
-
+  
+  /* Fix toggle switch for mobile */
   .switch {
     width: 60px;
     height: 30px;
   }
-
+  
+  .slider:before {
+    height: 22px;
+    width: 22px;
+    max-height: 22px;
+    max-width: 22px;
+  }
+  
+  /* Fixed calculation for mobile toggle */
   input:checked + .slider:before {
-    transform: translateX(30px);
+    transform: translateX(30px); /* 60px (switch width) - 30px (circle width) = 30px */
+  }
+  
+  /* Ensure text doesn't overflow */
+  .nav-right span {
+    font-size: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 120px;
+  }
+}
+
+@media (max-width: 480px) {
+  /* Extra small screens */
+  .nav-logo-section img {
+    height: 35px;
+    max-width: 80px;
+  }
+  
+  .nav-right span {
+    max-width: 80px;
+    font-size: 11px;
+  }
+  
+  /* Smaller toggle for very small screens */
+  .switch {
+    width: 50px;
+    height: 25px;
+  }
+  
+  .slider:before {
+    height: 18px;
+    width: 18px;
+    max-height: 18px;
+    max-width: 18px;
+    left: 3px;
+    bottom: 3px;
+  }
+  
+  input:checked + .slider:before {
+    /* Calculate the correct transform based on switch width minus circle width */
+    transform: translateX(calc(clamp(60px, 12vw, 80px) - clamp(30px, 6vw, 40px) + 2px));
+  }
+  
+  .slider:after {
+    font-size: 8px;
+    right: 6px;
+  }
+  
+  input:checked + .slider:after {
+    left: 6px;
   }
 }
 
