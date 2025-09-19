@@ -65,7 +65,6 @@ const Dashboard = () => {
                     switch_state: message.data.switch_state,
                     current_reading: message.data.current_reading,
                     voltage: message.data.voltage,
-                    is_online: true,
                   }
                 : device
             )
