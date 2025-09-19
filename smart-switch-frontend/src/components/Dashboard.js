@@ -56,7 +56,6 @@ const Dashboard = () => {
             )
           );
         } else if (message.type === 'device_update') {
-          // Update device data in real-time
           setDevices(prev =>
             prev.map(device =>
               device.id === message.deviceId
