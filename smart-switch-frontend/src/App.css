@@ -282,11 +282,6 @@ body {
   transition: all 0.3s ease;
 }
 
-.device-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(45, 55, 72, 0.15);
-}
-
 .device-card::before {
   content: "";
   position: absolute;
@@ -299,11 +294,11 @@ body {
 }
 
 .device-card.online::before {
-  background: linear-gradient(to bottom, #3182ce, #2c5aa0); /* Blue accent for online */
+  background: linear-gradient(to bottom, #39ce31, #2ca036); /* Blue accent for online */
 }
 
 .device-card.offline::before {
-  background: linear-gradient(to bottom, #a0aec0, #718096); /* Gray for offline */
+  background: linear-gradient(to bottom, #ec3b3b, #d22020); /* Gray for offline */
 }
 
 .device-header {
