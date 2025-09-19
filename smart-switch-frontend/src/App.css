@@ -56,14 +56,14 @@ body {
 }
 
 .nav-logo-section img {
-  height: clamp(30px, 6vw, 80px); /* Lowered min from 40px and max from 100px for better scaling */
+  height: clamp(60px, 8vw, 100px); /* Responsive logo size */
   width: auto;
-  max-width: 100px; /* Reduced from 120px to prevent overflow */
+  max-width: 150px;
 }
 
 .nav-content h1 {
   color: #ffffff;
-  font-size: clamp(16px, 3.5vw, 22px); /* Slightly reduced for mobile harmony */
+  font-size: clamp(18px, 4vw, 24px); /* Responsive text */
   white-space: nowrap;
 }
 
@@ -426,8 +426,8 @@ body {
 .switch {
   position: relative;
   display: inline-block;
-  width: clamp(60px, 12vw, 80px); /* More conservative scaling */
-  height: clamp(30px, 6vw, 40px);  /* More conservative scaling */
+  width: clamp(60px, 15vw, 80px);
+  height: clamp(30px, 8vw, 40px);
   cursor: pointer;
   flex-shrink: 0;
 }
@@ -460,8 +460,8 @@ body {
   position: absolute;
   height: calc(100% - 8px);
   width: calc(100% - 8px);
-  max-height: 24px; /* Reduced from 32px for mobile */
-  max-width: 24px;  /* Reduced from 32px for mobile */
+  max-height: 32px;
+  max-width: 32px;
   left: 4px;
   bottom: 4px;
   border-radius: 50%;
@@ -1024,14 +1024,14 @@ input:checked + .slider:after {
 @media (max-width: 768px) {
   /* Further reduce logo on very small screens */
   .nav-logo-section img {
-    height: 24px !important; /* Reduced from 30px for smaller mobiles */
-    max-width: 60px !important; /* Reduced from 80px to fit better */
+    height: clamp(35px, 8vw, 50px);
+    max-width: 100px;
   }
   
   /* Ensure navbar doesn't overflow */
   .nav-content {
-    padding: 0 0.75rem; /* Slightly more padding for touch */
-    gap: 0.5rem; /* Tighter gap on mobile */
+    padding: 0 0.5rem;
+    overflow: hidden;
   }
   
   /* Fix toggle switch for mobile */
@@ -1065,12 +1065,13 @@ input:checked + .slider:after {
 @media (max-width: 480px) {
   /* Extra small screens */
   .nav-logo-section img {
-    height: 20px !important; /* Reduced from 25px for very small phones */
-    max-width: 50px !important; /* Reduced from 70px */
+    height: 35px;
+    max-width: 80px;
   }
   
-  .nav-right {
-    gap: 8px; /* Tighter for small screens */
+  .nav-right span {
+    max-width: 80px;
+    font-size: 11px;
   }
   
   /* Smaller toggle for very small screens */
@@ -1089,9 +1090,9 @@ input:checked + .slider:after {
   }
   
   input:checked + .slider:before {
-    /* Calculate the correct transform based on switch width minus circle width */
-    transform: translateX(calc(clamp(60px, 12vw, 80px) - clamp(30px, 6vw, 40px) + 2px));
-  }
+  /* Calculate the correct transform based on switch width minus circle width */
+  transform: translateX(calc(clamp(60px, 12vw, 80px) - clamp(30px, 6vw, 40px) + 2px));
+}
   
   .slider:after {
     font-size: 8px;
