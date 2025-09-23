@@ -221,11 +221,11 @@ body {
 }
 
 .dashboard-header h2 {
-  padding: clamp(12px, 3vw, 16px) clamp(20px, 5vw, 32px);
-  border-radius: 18px;
-  font-size: clamp(18px, 5vw, 24px);
+  padding: clamp(8px, 2.5vw, 16px) clamp(15px, 4vw, 32px);
+  border-radius: clamp(12px, 4vw, 18px);
+  font-size: clamp(14px, 4.5vw, 24px); /* More conservative scaling */
   font-weight: 700;
-  letter-spacing: 0.8px;
+  letter-spacing: clamp(0.3px, 0.8vw, 0.8px);
   text-align: center;
   background: linear-gradient(135deg, rgba(45,55,72,0.95), rgba(74,85,104,0.9), rgba(113,128,150,0.85));
   backdrop-filter: blur(12px);
@@ -234,6 +234,14 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.1);
   box-shadow: 0 6px 18px rgba(45,55,72,0.25);
   transition: all 0.4s ease;
+  
+  /* Ensure proper text wrapping and overflow handling */
+  word-wrap: break-word;
+  word-break: break-word;
+  hyphens: auto;
+  max-width: 100%;
+  overflow-wrap: break-word;
+  line-height: 1.2;
 }
 
 .dashboard-controls {
@@ -1022,43 +1030,23 @@ input:checked + .slider:after {
 
 /* Mobile-specific overrides */
 @media (max-width: 768px) {
-  /* Further reduce logo on very small screens */
-  .nav-logo-section img {
-    height: clamp(35px, 8vw, 50px);
-    max-width: 100px;
+  .dashboard-header {
+    flex-direction: column;
+    gap: 10px;
+    align-items: stretch;
   }
   
-  /* Ensure navbar doesn't overflow */
-  .nav-content {
-    padding: 0 0.5rem;
-    overflow: hidden;
+  .dashboard-header h2 {
+    padding: 8px 15px;
+    font-size: clamp(13px, 4vw, 16px); /* Even smaller on mobile */
+    border-radius: 12px;
+    margin-bottom: 10px;
+    letter-spacing: 0.3px;
   }
   
-  /* Fix toggle switch for mobile */
-  .switch {
-    width: 60px;
-    height: 30px;
-  }
-  
-  .slider:before {
-    height: 22px;
-    width: 22px;
-    max-height: 22px;
-    max-width: 22px;
-  }
-  
-  /* Fixed calculation for mobile toggle */
-  input:checked + .slider:before {
-    transform: translateX(30px); /* 60px (switch width) - 30px (circle width) = 30px */
-  }
-  
-  /* Ensure text doesn't overflow */
-  .nav-right span {
-    font-size: 12px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 120px;
+  .dashboard-controls {
+    justify-content: center;
+    gap: 8px;
   }
 }
 
