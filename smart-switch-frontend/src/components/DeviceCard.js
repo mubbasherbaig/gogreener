@@ -58,7 +58,7 @@ const DeviceCard = ({ device, onControl, onViewChart, onDelete, onSchedules }) =
             className="chart-btn"
             onClick={() => onViewChart(device)}
           >
-            📊 Chart
+            Chart
           </button>
           
           <button 
@@ -66,7 +66,7 @@ const DeviceCard = ({ device, onControl, onViewChart, onDelete, onSchedules }) =
             onClick={handleSchedules}
             title="Set Schedules"
           >
-            ⏰ Schedule
+            Schedule
           </button>
         </div>
       </div>

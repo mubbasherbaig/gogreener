@@ -12,7 +12,7 @@ const Dashboard = () => {
   const [connected, setConnected] = useState(false);
   const [showAddDevice, setShowAddDevice] = useState(false);
   const [selectedDevice, setSelectedDevice] = useState(null);
-  const [scheduleDevice, setScheduleDevice] = useState(null); // New state for schedule modal
+  const [scheduleDevice, setScheduleDevice] = useState(null);
   const ws = useRef(null);
 
   useEffect(() => {
@@ -57,6 +57,10 @@ const Dashboard = () => {
           )
         );
       }
+    };
+
+    ws.current.onerror = (error) => {
+      console.error('WebSocket error:', error);
     };
   };
 
@@ -135,21 +139,16 @@ const Dashboard = () => {
     }
   };
 
-  // Handle opening schedule modal
   const handleSchedules = (device) => {
     setScheduleDevice(device);
   };
 
-  // Handle closing schedule modal
   const handleCloseScheduleModal = () => {
     setScheduleDevice(null);
   };
 
-  // Handle saving schedule
   const handleSaveSchedule = (scheduleData) => {
     console.log('Schedule saved:', scheduleData);
-    // Here you can add logic to update the device with schedule info if needed
-    // For example, you might want to show a schedule indicator on the device card
   };
 
   if (loading) {
@@ -187,13 +186,12 @@ const Dashboard = () => {
               onControl={controlDevice}
               onViewChart={() => setSelectedDevice(device)}
               onDelete={deleteDevice}
-              onSchedules={handleSchedules} // Pass the new handler
+              onSchedules={handleSchedules}
             />
           ))}
         </div>
       )}
 
-      {/* Existing Modals */}
       {showAddDevice && (
         <AddDevice 
           onClose={() => setShowAddDevice(false)}
@@ -208,7 +206,6 @@ const Dashboard = () => {
         />
       )}
 
-      {/* New Schedule Modal */}
       {scheduleDevice && (
         <ScheduleModal 
           device={scheduleDevice}
