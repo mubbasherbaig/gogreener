@@ -1,6 +1,6 @@
 import React from 'react';
 
-const DeviceCard = ({ device, onControl, onViewChart, onDelete }) => {
+const DeviceCard = ({ device, onControl, onViewChart, onDelete, onSchedules }) => {
   const isOnline = device.is_online;
   const switchState = device.switch_state;
   const currentReading = parseFloat(device.current_reading) || 0;
@@ -13,6 +13,10 @@ const DeviceCard = ({ device, onControl, onViewChart, onDelete }) => {
     if (window.confirm(`Delete device "${device.name}"? This cannot be undone.`)) {
       onDelete(device.id);
     }
+  };
+
+  const handleSchedules = () => {
+    onSchedules(device);
   };
 
   return (
@@ -47,18 +51,24 @@ const DeviceCard = ({ device, onControl, onViewChart, onDelete }) => {
             />
             <span className="slider"></span>
           </label>
-          {/* Remove or comment out this span since we have ON/OFF in the toggle now */}
-          {/* <span className="switch-label">
-            {switchState ? 'ON' : 'OFF'}
-          </span> */}
         </div>
         
-        <button 
-          className="chart-btn"
-          onClick={() => onViewChart(device)}
-        >
-          View Chart
-        </button>
+        <div className="control-buttons">
+          <button 
+            className="chart-btn"
+            onClick={() => onViewChart(device)}
+          >
+            📊 Chart
+          </button>
+          
+          <button 
+            className="schedule-btn"
+            onClick={handleSchedules}
+            title="Set Schedules"
+          >
+            ⏰ Schedule
+          </button>
+        </div>
       </div>
     </div>
   );

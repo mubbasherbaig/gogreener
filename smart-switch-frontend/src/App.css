@@ -221,11 +221,11 @@ body {
 }
 
 .dashboard-header h2 {
-  padding: clamp(8px, 2.5vw, 16px) clamp(15px, 4vw, 32px);
-  border-radius: clamp(12px, 4vw, 18px);
-  font-size: clamp(14px, 4.5vw, 24px); /* More conservative scaling */
+  padding: clamp(12px, 3vw, 16px) clamp(20px, 5vw, 32px);
+  border-radius: 18px;
+  font-size: clamp(18px, 5vw, 24px);
   font-weight: 700;
-  letter-spacing: clamp(0.3px, 0.8vw, 0.8px);
+  letter-spacing: 0.8px;
   text-align: center;
   background: linear-gradient(135deg, rgba(45,55,72,0.95), rgba(74,85,104,0.9), rgba(113,128,150,0.85));
   backdrop-filter: blur(12px);
@@ -234,14 +234,6 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.1);
   box-shadow: 0 6px 18px rgba(45,55,72,0.25);
   transition: all 0.4s ease;
-  
-  /* Ensure proper text wrapping and overflow handling */
-  word-wrap: break-word;
-  word-break: break-word;
-  hyphens: auto;
-  max-width: 100%;
-  overflow-wrap: break-word;
-  line-height: 1.2;
 }
 
 .dashboard-controls {
@@ -1030,23 +1022,43 @@ input:checked + .slider:after {
 
 /* Mobile-specific overrides */
 @media (max-width: 768px) {
-  .dashboard-header {
-    flex-direction: column;
-    gap: 10px;
-    align-items: stretch;
+  /* Further reduce logo on very small screens */
+  .nav-logo-section img {
+    height: clamp(35px, 8vw, 50px);
+    max-width: 100px;
   }
   
-  .dashboard-header h2 {
-    padding: 8px 15px;
-    font-size: clamp(13px, 4vw, 16px); /* Even smaller on mobile */
-    border-radius: 12px;
-    margin-bottom: 10px;
-    letter-spacing: 0.3px;
+  /* Ensure navbar doesn't overflow */
+  .nav-content {
+    padding: 0 0.5rem;
+    overflow: hidden;
   }
   
-  .dashboard-controls {
-    justify-content: center;
-    gap: 8px;
+  /* Fix toggle switch for mobile */
+  .switch {
+    width: 60px;
+    height: 30px;
+  }
+  
+  .slider:before {
+    height: 22px;
+    width: 22px;
+    max-height: 22px;
+    max-width: 22px;
+  }
+  
+  /* Fixed calculation for mobile toggle */
+  input:checked + .slider:before {
+    transform: translateX(30px); /* 60px (switch width) - 30px (circle width) = 30px */
+  }
+  
+  /* Ensure text doesn't overflow */
+  .nav-right span {
+    font-size: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 120px;
   }
 }
 
@@ -1127,5 +1139,460 @@ input:checked + .slider:after {
   .close-btn {
     min-height: 44px;
     min-width: 44px;
+  }
+}
+
+/* ======================
+   DEVICE CARD UPDATES FOR SCHEDULES
+   ====================== */
+
+/* Update device controls to accommodate both buttons */
+.device-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 15px;
+  gap: 10px;
+}
+
+.control-buttons {
+  display: flex;
+  gap: clamp(8px, 2vw, 10px);
+  flex: 1;
+  justify-content: flex-end;
+}
+
+/* Schedule Button */
+.schedule-btn {
+  background: linear-gradient(135deg, #8B5CF6, #7C3AED);
+  color: white;
+  border: none;
+  padding: clamp(6px, 2vw, 8px) clamp(10px, 3vw, 12px);
+  border-radius: 6px;
+  font-size: clamp(11px, 2.5vw, 13px);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 6px rgba(139, 92, 246, 0.3);
+  white-space: nowrap;
+  touch-action: manipulation;
+  flex: 1;
+  min-width: 0;
+}
+
+.schedule-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(139, 92, 246, 0.4);
+  background: linear-gradient(135deg, #7C3AED, #6D28D9);
+}
+
+/* Update chart button to match */
+.chart-btn {
+  background: linear-gradient(135deg, #10B981, #059669);
+  color: white;
+  border: none;
+  padding: clamp(6px, 2vw, 8px) clamp(10px, 3vw, 12px);
+  border-radius: 6px;
+  font-size: clamp(11px, 2.5vw, 13px);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 6px rgba(16, 185, 129, 0.3);
+  white-space: nowrap;
+  touch-action: manipulation;
+  flex: 1;
+  min-width: 0;
+}
+
+.chart-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(16, 185, 129, 0.4);
+  background: linear-gradient(135deg, #059669, #047857);
+}
+
+/* ======================
+   SCHEDULE MODAL STYLES
+   ====================== */
+
+.schedule-modal {
+  background: white;
+  border-radius: 16px;
+  width: 90vw;
+  max-width: 600px;
+  max-height: 90vh;
+  overflow: hidden;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
+  display: flex;
+  flex-direction: column;
+}
+
+.schedule-content {
+  padding: clamp(15px, 4vw, 24px);
+  overflow-y: auto;
+  flex: 1;
+}
+
+/* Section Headers */
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.section-header h4 {
+  color: #1f2937;
+  font-size: clamp(16px, 4vw, 18px);
+  font-weight: 600;
+  margin: 0;
+}
+
+.add-schedule-btn {
+  background: linear-gradient(135deg, #3B82F6, #2563EB);
+  color: white;
+  border: none;
+  padding: clamp(6px, 2vw, 8px) clamp(12px, 3vw, 16px);
+  border-radius: 8px;
+  font-size: clamp(12px, 3vw, 14px);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 6px rgba(59, 130, 246, 0.3);
+  white-space: nowrap;
+}
+
+.add-schedule-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(59, 130, 246, 0.4);
+}
+
+/* No Schedules Message */
+.no-schedules {
+  text-align: center;
+  padding: clamp(30px, 8vw, 40px);
+  color: #6b7280;
+  background: #f9fafb;
+  border-radius: 12px;
+  border: 2px dashed #d1d5db;
+}
+
+.no-schedules p {
+  margin: 0;
+  font-size: clamp(14px, 3.5vw, 16px);
+}
+
+/* Schedules List */
+.schedules-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.schedule-item {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: clamp(12px, 3vw, 16px);
+  transition: all 0.3s ease;
+}
+
+.schedule-item:hover {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+}
+
+.schedule-item.disabled {
+  opacity: 0.6;
+  background: #f9fafb;
+}
+
+.schedule-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 15px;
+}
+
+.schedule-main {
+  flex: 1;
+}
+
+.schedule-main h5 {
+  margin: 0 0 8px 0;
+  color: #1f2937;
+  font-size: clamp(14px, 3.5vw, 16px);
+  font-weight: 600;
+}
+
+.schedule-main p {
+  margin: 0 0 4px 0;
+  font-size: clamp(12px, 3vw, 14px);
+  color: #6b7280;
+}
+
+.schedule-time {
+  font-weight: 600 !important;
+  color: #3b82f6 !important;
+  font-size: clamp(13px, 3.2vw, 15px) !important;
+}
+
+.schedule-action {
+  font-weight: 500 !important;
+}
+
+.schedule-controls {
+  display: flex;
+  align-items: center;
+  gap: clamp(8px, 2vw, 12px);
+  flex-shrink: 0;
+}
+
+/* Toggle Switch */
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+}
+
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #ccc;
+  transition: 0.4s;
+  border-radius: 24px;
+}
+
+.toggle-slider:before {
+  position: absolute;
+  content: "";
+  height: 18px;
+  width: 18px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  transition: 0.4s;
+  border-radius: 50%;
+}
+
+input:checked + .toggle-slider {
+  background-color: #3b82f6;
+}
+
+input:checked + .toggle-slider:before {
+  transform: translateX(20px);
+}
+
+/* Control Buttons */
+.edit-btn, .delete-schedule-btn {
+  background: none;
+  border: none;
+  font-size: clamp(14px, 3.5vw, 16px);
+  cursor: pointer;
+  padding: clamp(4px, 1.5vw, 6px);
+  border-radius: 6px;
+  transition: all 0.3s ease;
+  min-width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.edit-btn:hover {
+  background-color: #e0f2fe;
+  transform: scale(1.1);
+}
+
+.delete-schedule-btn:hover {
+  background-color: #fef2f2;
+  transform: scale(1.1);
+}
+
+/* ======================
+   ADD/EDIT SCHEDULE FORM
+   ====================== */
+
+.add-schedule-form {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: clamp(16px, 4vw, 20px);
+  margin-top: 20px;
+}
+
+.add-schedule-form h4 {
+  margin: 0 0 20px 0;
+  color: #1f2937;
+  font-size: clamp(16px, 4vw, 18px);
+  font-weight: 600;
+}
+
+.form-group {
+  margin-bottom: clamp(16px, 4vw, 20px);
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 8px;
+  color: #374151;
+  font-weight: 500;
+  font-size: clamp(13px, 3.2vw, 14px);
+}
+
+.form-group input, .form-group select {
+  width: 100%;
+  padding: clamp(8px, 2.5vw, 10px) clamp(10px, 3vw, 12px);
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: clamp(14px, 3.5vw, 16px);
+  background: white;
+  transition: all 0.3s ease;
+  box-sizing: border-box;
+}
+
+.form-group input:focus, .form-group select:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+/* Days Selector */
+.days-selector {
+  display: flex;
+  flex-wrap: wrap;
+  gap: clamp(6px, 2vw, 8px);
+  margin-top: 8px;
+}
+
+.day-btn {
+  background: white;
+  border: 2px solid #d1d5db;
+  color: #6b7280;
+  padding: clamp(8px, 2.5vw, 10px) clamp(10px, 3vw, 12px);
+  border-radius: 8px;
+  font-size: clamp(12px, 3vw, 14px);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  min-width: clamp(40px, 10vw, 50px);
+  text-align: center;
+}
+
+.day-btn:hover {
+  border-color: #9ca3af;
+}
+
+.day-btn.selected {
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  color: white;
+  border-color: #3b82f6;
+  transform: scale(1.05);
+}
+
+/* Form Actions */
+.form-actions {
+  display: flex;
+  gap: clamp(10px, 3vw, 12px);
+  justify-content: flex-end;
+  margin-top: clamp(20px, 5vw, 24px);
+  flex-wrap: wrap;
+}
+
+.cancel-btn {
+  background: #f3f4f6;
+  color: #6b7280;
+  border: 1px solid #d1d5db;
+  padding: clamp(8px, 2.5vw, 10px) clamp(16px, 4vw, 20px);
+  border-radius: 8px;
+  font-size: clamp(13px, 3.2vw, 14px);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.cancel-btn:hover {
+  background: #e5e7eb;
+  border-color: #9ca3af;
+}
+
+.save-btn {
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: white;
+  border: none;
+  padding: clamp(8px, 2.5vw, 10px) clamp(16px, 4vw, 20px);
+  border-radius: 8px;
+  font-size: clamp(13px, 3.2vw, 14px);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 6px rgba(16, 185, 129, 0.3);
+}
+
+.save-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(16, 185, 129, 0.4);
+}
+
+.save-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Loading State */
+.loading {
+  text-align: center;
+  padding: clamp(20px, 5vw, 30px);
+  color: #6b7280;
+  font-size: clamp(14px, 3.5vw, 16px);
+}
+
+/* ======================
+   RESPONSIVE ADJUSTMENTS
+   ====================== */
+
+@media (max-width: 480px) {
+  .schedule-modal {
+    width: 95vw;
+    max-height: 95vh;
+  }
+  
+  .schedule-info {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  
+  .schedule-controls {
+    align-self: flex-end;
+  }
+  
+  .control-buttons {
+    flex-direction: column;
+    width: 100%;
+  }
+  
+  .schedule-btn, .chart-btn {
+    flex: none;
+  }
+  
+  .form-actions {
+    flex-direction: column;
+  }
+  
+  .form-actions button {
+    width: 100%;
   }
 }

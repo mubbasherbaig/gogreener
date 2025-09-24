@@ -2,86 +2,61 @@ import React, { useState, useEffect, useRef } from 'react';
 import DeviceCard from './DeviceCard';
 import AddDevice from './AddDevice';
 import DeviceChart from './DeviceChart';
-import { WS_BASE_URL } from '../config';
-import { API_BASE_URL } from '../config';
+import ScheduleModal from './ScheduleModal';
+
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
 
 const Dashboard = () => {
   const [devices, setDevices] = useState([]);
-  const [selectedDevice, setSelectedDevice] = useState(null);
-  const [showAddDevice, setShowAddDevice] = useState(false);
   const [loading, setLoading] = useState(true);
   const [connected, setConnected] = useState(false);
-  const wsRef = useRef(null);
+  const [showAddDevice, setShowAddDevice] = useState(false);
+  const [selectedDevice, setSelectedDevice] = useState(null);
+  const [scheduleDevice, setScheduleDevice] = useState(null); // New state for schedule modal
+  const ws = useRef(null);
 
   useEffect(() => {
     fetchDevices();
     connectWebSocket();
-    
+
     return () => {
-      if (wsRef.current) {
-        wsRef.current.close();
+      if (ws.current) {
+        ws.current.close();
       }
     };
   }, []);
 
   const connectWebSocket = () => {
     const token = localStorage.getItem('token');
-    if (!token) return;
-
-    const wsUrl = WS_BASE_URL;
-    const ws = new WebSocket(wsUrl);
-    wsRef.current = ws;
-
-    ws.onopen = () => {
+    const wsUrl = `${API_BASE_URL.replace('http', 'ws')}/ws?token=${token}`;
+    
+    ws.current = new WebSocket(wsUrl);
+    
+    ws.current.onopen = () => {
       console.log('WebSocket connected');
       setConnected(true);
-      
-      // Send user authentication
-      ws.send(JSON.stringify({
-        type: 'user_connect',
-        token: token
-      }));
     };
-
-    ws.onmessage = (event) => {
-        const message = JSON.parse(event.data);
-      
-        if (message.type === 'device_status') {
-          // Update device online status
-          setDevices(prev =>
-            prev.map(device =>
-              device.id === message.deviceId
-                ? { ...device, is_online: message.isOnline }
-                : device
-            )
-          );
-        } else if (message.type === 'device_update') {
-          setDevices(prev =>
-            prev.map(device =>
-              device.id === message.deviceId
-                ? {
-                    ...device,
-                    switch_state: message.data.switch_state,
-                    current_reading: message.data.current_reading,
-                    voltage: message.data.voltage,
-                  }
-                : device
-            )
-          );
-        }
-    };
-
-    ws.onclose = () => {
+    
+    ws.current.onclose = () => {
       console.log('WebSocket disconnected');
       setConnected(false);
-      
       // Reconnect after 3 seconds
       setTimeout(connectWebSocket, 3000);
     };
-
-    ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
-      setConnected(false);
+    
+    ws.current.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      console.log('Received:', data);
+      
+      if (data.type === 'device_update') {
+        setDevices(prevDevices => 
+          prevDevices.map(device => 
+            device.id === data.device_id 
+              ? { ...device, ...data.data }
+              : device
+          )
+        );
+      }
     };
   };
 
@@ -96,24 +71,27 @@ const Dashboard = () => {
       
       if (response.ok) {
         const data = await response.json();
-        const uniqueDevices = data.filter((device, index, arr) => 
-          arr.findIndex(d => d.id === device.id) === index
-        );
-        setDevices(uniqueDevices);
+        setDevices(data);
+      } else if (response.status === 401) {
+        localStorage.removeItem('token');
+        window.location.href = '/login';
       }
     } catch (error) {
       console.error('Error fetching devices:', error);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const controlDevice = async (deviceId, action, value) => {
-    // Optimistic update - show change immediately
-    setDevices(prev => prev.map(device => 
-      device.id === deviceId 
-        ? { ...device, switch_state: action === 'switch' ? value : device.switch_state }
-        : device
-    ));
+    // Optimistic update
+    setDevices(prevDevices => 
+      prevDevices.map(device => 
+        device.id === deviceId 
+          ? { ...device, switch_state: action === 'switch' ? value : device.switch_state }
+          : device
+      )
+    );
 
     try {
       const token = localStorage.getItem('token');
@@ -157,6 +135,23 @@ const Dashboard = () => {
     }
   };
 
+  // Handle opening schedule modal
+  const handleSchedules = (device) => {
+    setScheduleDevice(device);
+  };
+
+  // Handle closing schedule modal
+  const handleCloseScheduleModal = () => {
+    setScheduleDevice(null);
+  };
+
+  // Handle saving schedule
+  const handleSaveSchedule = (scheduleData) => {
+    console.log('Schedule saved:', scheduleData);
+    // Here you can add logic to update the device with schedule info if needed
+    // For example, you might want to show a schedule indicator on the device card
+  };
+
   if (loading) {
     return <div className="loading">Loading devices...</div>;
   }
@@ -192,11 +187,13 @@ const Dashboard = () => {
               onControl={controlDevice}
               onViewChart={() => setSelectedDevice(device)}
               onDelete={deleteDevice}
+              onSchedules={handleSchedules} // Pass the new handler
             />
           ))}
         </div>
       )}
 
+      {/* Existing Modals */}
       {showAddDevice && (
         <AddDevice 
           onClose={() => setShowAddDevice(false)}
@@ -208,6 +205,15 @@ const Dashboard = () => {
         <DeviceChart 
           device={selectedDevice}
           onClose={() => setSelectedDevice(null)}
+        />
+      )}
+
+      {/* New Schedule Modal */}
+      {scheduleDevice && (
+        <ScheduleModal 
+          device={scheduleDevice}
+          onClose={handleCloseScheduleModal}
+          onSave={handleSaveSchedule}
         />
       )}
     </div>
