@@ -3,64 +3,87 @@ import DeviceCard from './DeviceCard';
 import AddDevice from './AddDevice';
 import DeviceChart from './DeviceChart';
 import ScheduleModal from './ScheduleModal';
-
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+import { WS_BASE_URL } from '../config';
+import { API_BASE_URL } from '../config';
 
 const Dashboard = () => {
   const [devices, setDevices] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [connected, setConnected] = useState(false);
-  const [showAddDevice, setShowAddDevice] = useState(false);
   const [selectedDevice, setSelectedDevice] = useState(null);
   const [scheduleDevice, setScheduleDevice] = useState(null);
-  const ws = useRef(null);
+  const [showAddDevice, setShowAddDevice] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [connected, setConnected] = useState(false);
+  const wsRef = useRef(null);
 
   useEffect(() => {
     fetchDevices();
     connectWebSocket();
-
+    
     return () => {
-      if (ws.current) {
-        ws.current.close();
+      if (wsRef.current) {
+        wsRef.current.close();
       }
     };
   }, []);
 
   const connectWebSocket = () => {
     const token = localStorage.getItem('token');
-    const wsUrl = `${API_BASE_URL.replace('http', 'ws')}/ws?token=${token}`;
-    
-    ws.current = new WebSocket(wsUrl);
-    
-    ws.current.onopen = () => {
+    if (!token) return;
+
+    const wsUrl = WS_BASE_URL;
+    const ws = new WebSocket(wsUrl);
+    wsRef.current = ws;
+
+    ws.onopen = () => {
       console.log('WebSocket connected');
       setConnected(true);
-    };
-    
-    ws.current.onclose = () => {
-      console.log('WebSocket disconnected');
-      setConnected(false);
-      // Reconnect after 3 seconds
-      setTimeout(connectWebSocket, 3000);
-    };
-    
-    ws.current.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      console.log('Received:', data);
       
-      if (data.type === 'device_update') {
-        setDevices(prevDevices => 
-          prevDevices.map(device => 
-            device.id === data.device_id 
-              ? { ...device, ...data.data }
+      // Send user authentication
+      ws.send(JSON.stringify({
+        type: 'user_connect',
+        token: token
+      }));
+    };
+
+    ws.onmessage = (event) => {
+      const message = JSON.parse(event.data);
+      
+      if (message.type === 'device_status') {
+        // Update device online status
+        setDevices(prev =>
+          prev.map(device =>
+            device.id === message.deviceId
+              ? { ...device, is_online: message.isOnline }
+              : device
+          )
+        );
+      } else if (message.type === 'device_update') {
+        setDevices(prev =>
+          prev.map(device =>
+            device.id === message.deviceId
+              ? {
+                  ...device,
+                  switch_state: message.data.switch_state,
+                  current_reading: message.data.current_reading,
+                  voltage: message.data.voltage,
+                }
               : device
           )
         );
       }
     };
 
-    ws.current.onerror = (error) => {
+    ws.onclose = () => {
+      console.log('WebSocket disconnected');
+      setConnected(false);
+      
+      // Reconnect after 3 seconds
+      setTimeout(connectWebSocket, 3000);
+    };
+
+    ws.onerror = (error) => {
       console.error('WebSocket error:', error);
+      setConnected(false);
     };
   };
 
@@ -75,27 +98,24 @@ const Dashboard = () => {
       
       if (response.ok) {
         const data = await response.json();
-        setDevices(data);
-      } else if (response.status === 401) {
-        localStorage.removeItem('token');
-        window.location.href = '/login';
+        const uniqueDevices = data.filter((device, index, arr) => 
+          arr.findIndex(d => d.id === device.id) === index
+        );
+        setDevices(uniqueDevices);
       }
     } catch (error) {
       console.error('Error fetching devices:', error);
-    } finally {
-      setLoading(false);
     }
+    setLoading(false);
   };
 
   const controlDevice = async (deviceId, action, value) => {
-    // Optimistic update
-    setDevices(prevDevices => 
-      prevDevices.map(device => 
-        device.id === deviceId 
-          ? { ...device, switch_state: action === 'switch' ? value : device.switch_state }
-          : device
-      )
-    );
+    // Optimistic update - show change immediately
+    setDevices(prev => prev.map(device => 
+      device.id === deviceId 
+        ? { ...device, switch_state: action === 'switch' ? value : device.switch_state }
+        : device
+    ));
 
     try {
       const token = localStorage.getItem('token');
@@ -113,8 +133,7 @@ const Dashboard = () => {
       
     } catch (error) {
       console.error('Error controlling device:', error);
-      // Revert optimistic update on error
-      fetchDevices();
+      fetchDevices(); // Revert on error
     }
   };
 

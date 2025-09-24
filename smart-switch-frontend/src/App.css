@@ -1065,7 +1065,6 @@ input:checked + .slider:after {
 @media (max-width: 480px) {
   /* Extra small screens */
   .nav-logo-section img {
-    height: 25px;
     max-width: 70px;
   }
   
