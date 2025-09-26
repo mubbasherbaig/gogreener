@@ -1,17 +1,19 @@
 import React, { useState, useEffect } from 'react';
+import { API_BASE_URL } from '../config';
 
 const ScheduleModal = ({ device, onClose, onSave }) => {
   const [schedules, setSchedules] = useState([]);
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
   const [newSchedule, setNewSchedule] = useState({
     name: '',
     time: '',
     action: 'turn_on',
     days: [],
     enabled: true,
-    repeat_type: 'weekly' // daily, weekly, once
+    repeat_type: 'weekly'
   });
 
   const daysOfWeek = [
@@ -30,43 +32,34 @@ const ScheduleModal = ({ device, onClose, onSave }) => {
 
   const fetchSchedules = async () => {
     setLoading(true);
+    setError('');
     try {
-      // Mock data for now - replace with actual API call
-      const mockSchedules = [
-        {
-          id: 1,
-          name: 'Morning ON',
-          time: '07:00',
-          action: 'turn_on',
-          days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
-          enabled: true,
-          repeat_type: 'weekly'
-        },
-        {
-          id: 2,
-          name: 'Evening OFF',
-          time: '22:00',
-          action: 'turn_off',
-          days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'],
-          enabled: true,
-          repeat_type: 'weekly'
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_BASE_URL}/api/devices/${device.id}/schedules`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
         }
-      ];
-      
-      // Simulate API delay
-      setTimeout(() => {
-        setSchedules(mockSchedules);
-        setLoading(false);
-      }, 300);
-      
-      // TODO: Replace with actual API call
-      // const response = await fetch(`/api/devices/${device.id}/schedules`);
-      // const data = await response.json();
-      // setSchedules(data);
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        // Convert database format to frontend format
+        const formattedSchedules = data.map(schedule => ({
+          ...schedule,
+          time: `${schedule.hour.toString().padStart(2, '0')}:${schedule.minute.toString().padStart(2, '0')}`,
+          days: Array.isArray(schedule.days) ? schedule.days : JSON.parse(schedule.days || '[]')
+        }));
+        setSchedules(formattedSchedules);
+      } else {
+        const errorData = await response.json();
+        setError(errorData.error || 'Failed to fetch schedules');
+        console.error('Error fetching schedules:', errorData);
+      }
     } catch (error) {
       console.error('Error fetching schedules:', error);
-      setLoading(false);
+      setError('Network error. Please try again.');
     }
+    setLoading(false);
   };
 
   const handleInputChange = (field, value) => {
@@ -92,20 +85,67 @@ const ScheduleModal = ({ device, onClose, onSave }) => {
     }
 
     setLoading(true);
+    setError('');
+
     try {
-      // TODO: Replace with actual API call
+      const token = localStorage.getItem('token');
       const scheduleData = {
-        ...newSchedule,
-        id: editingSchedule ? editingSchedule.id : Date.now(),
-        device_id: device.id
+        name: newSchedule.name,
+        time: newSchedule.time,
+        action: newSchedule.action,
+        days: newSchedule.days,
+        enabled: newSchedule.enabled,
+        repeat_type: newSchedule.repeat_type
       };
 
       if (editingSchedule) {
         // Update existing schedule
-        setSchedules(prev => prev.map(s => s.id === editingSchedule.id ? scheduleData : s));
+        const response = await fetch(`${API_BASE_URL}/api/devices/${device.id}/schedules/${editingSchedule.id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify(scheduleData)
+        });
+
+        if (response.ok) {
+          const updatedSchedule = await response.json();
+          // Update local state
+          setSchedules(prev => prev.map(s => 
+            s.id === editingSchedule.id 
+              ? { ...updatedSchedule, time: newSchedule.time, days: newSchedule.days }
+              : s
+          ));
+          console.log('Schedule updated successfully');
+        } else {
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Failed to update schedule');
+        }
       } else {
-        // Add new schedule
-        setSchedules(prev => [...prev, scheduleData]);
+        // Create new schedule
+        const response = await fetch(`${API_BASE_URL}/api/devices/${device.id}/schedules`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify(scheduleData)
+        });
+
+        if (response.ok) {
+          const newScheduleData = await response.json();
+          // Add to local state
+          setSchedules(prev => [...prev, { 
+            ...newScheduleData, 
+            time: newSchedule.time, 
+            days: newSchedule.days 
+          }]);
+          console.log('Schedule created successfully');
+        } else {
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Failed to create schedule');
+        }
       }
 
       // Reset form
@@ -119,21 +159,28 @@ const ScheduleModal = ({ device, onClose, onSave }) => {
       });
       setShowAddForm(false);
       setEditingSchedule(null);
-      
+
       if (onSave) {
-        onSave(scheduleData);
+        onSave();
       }
-      
-      setLoading(false);
+
     } catch (error) {
       console.error('Error saving schedule:', error);
-      setLoading(false);
-      alert('Failed to save schedule. Please try again.');
+      setError(error.message);
+      alert('Failed to save schedule: ' + error.message);
     }
+    setLoading(false);
   };
 
   const handleEditSchedule = (schedule) => {
-    setNewSchedule(schedule);
+    setNewSchedule({
+      name: schedule.name,
+      time: schedule.time,
+      action: schedule.action,
+      days: schedule.days,
+      enabled: schedule.enabled,
+      repeat_type: schedule.repeat_type || 'weekly'
+    });
     setEditingSchedule(schedule);
     setShowAddForm(true);
   };
@@ -142,25 +189,67 @@ const ScheduleModal = ({ device, onClose, onSave }) => {
     if (!window.confirm('Delete this schedule?')) return;
 
     setLoading(true);
+    setError('');
+
     try {
-      // TODO: Replace with actual API call
-      setSchedules(prev => prev.filter(s => s.id !== scheduleId));
-      setLoading(false);
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_BASE_URL}/api/devices/${device.id}/schedules/${scheduleId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (response.ok) {
+        // Remove from local state
+        setSchedules(prev => prev.filter(s => s.id !== scheduleId));
+        console.log('Schedule deleted successfully');
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to delete schedule');
+      }
     } catch (error) {
       console.error('Error deleting schedule:', error);
-      setLoading(false);
-      alert('Failed to delete schedule. Please try again.');
+      setError(error.message);
+      alert('Failed to delete schedule: ' + error.message);
     }
+    setLoading(false);
   };
 
   const handleToggleSchedule = async (scheduleId) => {
+    const schedule = schedules.find(s => s.id === scheduleId);
+    if (!schedule) return;
+
     try {
-      // TODO: Replace with actual API call
-      setSchedules(prev => prev.map(s => 
-        s.id === scheduleId ? { ...s, enabled: !s.enabled } : s
-      ));
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_BASE_URL}/api/devices/${device.id}/schedules/${scheduleId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          name: schedule.name,
+          time: schedule.time,
+          action: schedule.action,
+          days: schedule.days,
+          enabled: !schedule.enabled,
+          repeat_type: schedule.repeat_type
+        })
+      });
+
+      if (response.ok) {
+        // Update local state
+        setSchedules(prev => prev.map(s => 
+          s.id === scheduleId ? { ...s, enabled: !s.enabled } : s
+        ));
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to toggle schedule');
+      }
     } catch (error) {
       console.error('Error toggling schedule:', error);
+      alert('Failed to toggle schedule: ' + error.message);
     }
   };
 
@@ -191,6 +280,19 @@ const ScheduleModal = ({ device, onClose, onSave }) => {
           <button className="close-btn" onClick={onClose}>×</button>
         </div>
 
+        {error && (
+          <div className="error-message" style={{ 
+            background: '#fee', 
+            color: '#c33', 
+            padding: '10px', 
+            margin: '10px 20px',
+            borderRadius: '4px',
+            border: '1px solid #fcc'
+          }}>
+            {error}
+          </div>
+        )}
+
         <div className="schedule-content">
           {/* Existing Schedules */}
           <div className="schedules-section">
@@ -210,6 +312,7 @@ const ScheduleModal = ({ device, onClose, onSave }) => {
                     repeat_type: 'weekly'
                   });
                 }}
+                disabled={loading}
               >
                 + Add Schedule
               </button>
@@ -237,25 +340,26 @@ const ScheduleModal = ({ device, onClose, onSave }) => {
                         <p className="schedule-days">{formatDays(schedule.days)}</p>
                       </div>
                       <div className="schedule-controls">
-                        <label className="toggle-switch">
-                          <input
-                            type="checkbox"
-                            checked={schedule.enabled}
-                            onChange={() => handleToggleSchedule(schedule.id)}
-                          />
-                          <span className="toggle-slider"></span>
-                        </label>
+                        <button 
+                          className="toggle-btn"
+                          onClick={() => handleToggleSchedule(schedule.id)}
+                          disabled={loading}
+                        >
+                          {schedule.enabled ? 'Disable' : 'Enable'}
+                        </button>
                         <button 
                           className="edit-btn"
                           onClick={() => handleEditSchedule(schedule)}
+                          disabled={loading}
                         >
-                          ✏️
+                          Edit
                         </button>
                         <button 
-                          className="delete-schedule-btn"
+                          className="delete-btn"
                           onClick={() => handleDeleteSchedule(schedule.id)}
+                          disabled={loading}
                         >
-                          🗑️
+                          Delete
                         </button>
                       </div>
                     </div>
@@ -267,33 +371,36 @@ const ScheduleModal = ({ device, onClose, onSave }) => {
 
           {/* Add/Edit Form */}
           {showAddForm && (
-            <div className="add-schedule-form">
+            <div className="add-schedule-section">
               <h4>{editingSchedule ? 'Edit Schedule' : 'Add New Schedule'}</h4>
               
               <div className="form-group">
-                <label>Schedule Name:</label>
+                <label>Schedule Name</label>
                 <input
                   type="text"
-                  placeholder="e.g., Morning Light"
                   value={newSchedule.name}
                   onChange={(e) => handleInputChange('name', e.target.value)}
+                  placeholder="Enter schedule name"
+                  disabled={loading}
                 />
               </div>
 
               <div className="form-group">
-                <label>Time:</label>
+                <label>Time</label>
                 <input
                   type="time"
                   value={newSchedule.time}
                   onChange={(e) => handleInputChange('time', e.target.value)}
+                  disabled={loading}
                 />
               </div>
 
               <div className="form-group">
-                <label>Action:</label>
-                <select
-                  value={newSchedule.action}
+                <label>Action</label>
+                <select 
+                  value={newSchedule.action} 
                   onChange={(e) => handleInputChange('action', e.target.value)}
+                  disabled={loading}
                 >
                   <option value="turn_on">Turn ON</option>
                   <option value="turn_off">Turn OFF</option>
@@ -301,7 +408,7 @@ const ScheduleModal = ({ device, onClose, onSave }) => {
               </div>
 
               <div className="form-group">
-                <label>Repeat Days:</label>
+                <label>Days</label>
                 <div className="days-selector">
                   {daysOfWeek.map(day => (
                     <button
@@ -309,6 +416,7 @@ const ScheduleModal = ({ device, onClose, onSave }) => {
                       type="button"
                       className={`day-btn ${newSchedule.days.includes(day.key) ? 'selected' : ''}`}
                       onClick={() => handleDayToggle(day.key)}
+                      disabled={loading}
                     >
                       {day.label}
                     </button>
@@ -318,22 +426,29 @@ const ScheduleModal = ({ device, onClose, onSave }) => {
 
               <div className="form-actions">
                 <button 
-                  type="button" 
-                  className="cancel-btn"
-                  onClick={() => {
-                    setShowAddForm(false);
-                    setEditingSchedule(null);
-                  }}
-                >
-                  Cancel
-                </button>
-                <button 
-                  type="button" 
-                  className="save-btn"
+                  className="save-btn" 
                   onClick={handleSaveSchedule}
                   disabled={loading}
                 >
-                  {loading ? 'Saving...' : editingSchedule ? 'Update' : 'Save'}
+                  {loading ? 'Saving...' : (editingSchedule ? 'Update Schedule' : 'Add Schedule')}
+                </button>
+                <button 
+                  className="cancel-btn" 
+                  onClick={() => {
+                    setShowAddForm(false);
+                    setEditingSchedule(null);
+                    setNewSchedule({
+                      name: '',
+                      time: '',
+                      action: 'turn_on',
+                      days: [],
+                      enabled: true,
+                      repeat_type: 'weekly'
+                    });
+                  }}
+                  disabled={loading}
+                >
+                  Cancel
                 </button>
               </div>
             </div>
