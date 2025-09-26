@@ -469,6 +469,12 @@ app.post('/api/devices/:deviceId/schedules', authenticateToken, async (req, res)
   const { deviceId } = req.params;
   const { name, time, action, days, enabled = true, repeat_type = 'weekly' } = req.body;
 
+  console.log('=== Schedule Creation Debug ===');
+  console.log('Raw request body:', req.body);
+  console.log('Days received:', days);
+  console.log('Days type:', typeof days);
+  console.log('Days is array:', Array.isArray(days));
+
   try {
     // Verify user owns the device
     const deviceCheck = await db.query(
@@ -481,12 +487,45 @@ app.post('/api/devices/:deviceId/schedules', authenticateToken, async (req, res)
     }
 
     // Parse time (HH:MM format)
+    if (!time || !time.includes(':')) {
+      return res.status(400).json({ error: 'Invalid time format' });
+    }
+    
     const [hour, minute] = time.split(':').map(Number);
     
     // Validate input
-    if (!name || hour < 0 || hour > 23 || minute < 0 || minute > 59 || !days || days.length === 0) {
-      return res.status(400).json({ error: 'Invalid schedule data' });
+    if (!name || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+      return res.status(400).json({ error: 'Invalid schedule data - name or time issue' });
     }
+
+    // Handle days properly - ensure it's an array
+    let daysArray;
+    if (Array.isArray(days)) {
+      daysArray = days;
+    } else if (typeof days === 'string') {
+      try {
+        daysArray = JSON.parse(days);
+      } catch (e) {
+        return res.status(400).json({ error: 'Invalid days format - must be array' });
+      }
+    } else {
+      return res.status(400).json({ error: 'Days must be provided as an array' });
+    }
+
+    if (!Array.isArray(daysArray) || daysArray.length === 0) {
+      return res.status(400).json({ error: 'At least one day must be selected' });
+    }
+
+    console.log('Processed days array:', daysArray);
+
+    // Validate action
+    if (action !== 'turn_on' && action !== 'turn_off') {
+      return res.status(400).json({ error: 'Action must be turn_on or turn_off' });
+    }
+
+    // Convert days array to JSON string for database
+    const daysJson = JSON.stringify(daysArray);
+    console.log('Days JSON for database:', daysJson);
 
     // Insert schedule into database
     const result = await db.query(
@@ -494,36 +533,67 @@ app.post('/api/devices/:deviceId/schedules', authenticateToken, async (req, res)
        (device_id, name, hour, minute, action, days, enabled, repeat_type) 
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
        RETURNING *`,
-      [deviceId, name, hour, minute, action, JSON.stringify(days), enabled, repeat_type]
+      [deviceId, name, hour, minute, action, daysJson, enabled, repeat_type]
     );
 
     const newSchedule = result.rows[0];
+    console.log('Created schedule:', newSchedule);
+
+    // Parse days back from database for response and device command
+    let parsedDays;
+    try {
+      parsedDays = JSON.parse(newSchedule.days);
+    } catch (e) {
+      console.error('Error parsing days from database:', e);
+      parsedDays = daysArray; // fallback to original
+    }
 
     // Send schedule to device if it's online
-    const scheduleCommand = {
-      type: 'command',
-      command_type: 'schedule',
-      schedule_action: 'add',
-      slot: -1,
-      enabled: newSchedule.enabled,
-      action: newSchedule.action,
-      hour: newSchedule.hour,
-      minute: newSchedule.minute,
-      days: convertDaysToNumbers(JSON.parse(newSchedule.days)),
-      schedule_id: newSchedule.id
-    };
+    try {
+      const scheduleCommand = {
+        type: 'command',
+        command_type: 'schedule',
+        schedule_action: 'add',
+        slot: -1,
+        enabled: newSchedule.enabled,
+        action: newSchedule.action,
+        hour: newSchedule.hour,
+        minute: newSchedule.minute,
+        days: convertDaysToNumbers(parsedDays),
+        schedule_id: newSchedule.id
+      };
 
-    const sent = sendCommandToDevice(deviceId, scheduleCommand);
-    
-    res.json({ 
-      ...newSchedule, 
-      days: JSON.parse(newSchedule.days),
-      synced_to_device: sent 
-    });
+      const sent = sendCommandToDevice(deviceId, scheduleCommand);
+      console.log('Device command sent:', sent);
+      
+      res.json({ 
+        ...newSchedule, 
+        days: parsedDays,
+        synced_to_device: sent 
+      });
+
+    } catch (deviceError) {
+      console.error('Error sending to device:', deviceError);
+      // Still return success since database save worked
+      res.json({ 
+        ...newSchedule, 
+        days: parsedDays,
+        synced_to_device: false,
+        sync_error: deviceError.message
+      });
+    }
 
   } catch (error) {
-    console.error('Error creating schedule:', error);
-    res.status(500).json({ error: 'Database error: ' + error.message });
+    console.error('=== Database Error ===');
+    console.error('Error message:', error.message);
+    console.error('Error code:', error.code);
+    console.error('Error detail:', error.detail);
+    console.error('Stack:', error.stack);
+    
+    res.status(500).json({ 
+      error: 'Database error: ' + error.message,
+      code: error.code 
+    });
   }
 });
 
@@ -547,6 +617,20 @@ app.put('/api/devices/:deviceId/schedules/:scheduleId', authenticateToken, async
 
     const [hour, minute] = time.split(':').map(Number);
 
+    // Handle days properly - ensure it's an array
+    let daysArray;
+    if (Array.isArray(days)) {
+      daysArray = days;
+    } else if (typeof days === 'string') {
+      try {
+        daysArray = JSON.parse(days);
+      } catch (e) {
+        return res.status(400).json({ error: 'Invalid days format' });
+      }
+    } else {
+      return res.status(400).json({ error: 'Days must be provided' });
+    }
+
     // Update schedule in database
     const result = await db.query(
       `UPDATE schedules 
@@ -554,10 +638,13 @@ app.put('/api/devices/:deviceId/schedules/:scheduleId', authenticateToken, async
            enabled = $6, repeat_type = $7, updated_at = CURRENT_TIMESTAMP
        WHERE id = $8 AND device_id = $9 
        RETURNING *`,
-      [name, hour, minute, action, JSON.stringify(days), enabled, repeat_type, scheduleId, deviceId]
+      [name, hour, minute, action, JSON.stringify(daysArray), enabled, repeat_type, scheduleId, deviceId]
     );
 
     const updatedSchedule = result.rows[0];
+
+    // Parse days for response
+    const parsedDays = JSON.parse(updatedSchedule.days);
 
     // Send update to device if it's online
     const scheduleCommand = {
@@ -569,7 +656,7 @@ app.put('/api/devices/:deviceId/schedules/:scheduleId', authenticateToken, async
       action: updatedSchedule.action,
       hour: updatedSchedule.hour,
       minute: updatedSchedule.minute,
-      days: convertDaysToNumbers(JSON.parse(updatedSchedule.days)),
+      days: convertDaysToNumbers(parsedDays),
       schedule_id: updatedSchedule.id
     };
 
@@ -577,13 +664,13 @@ app.put('/api/devices/:deviceId/schedules/:scheduleId', authenticateToken, async
 
     res.json({ 
       ...updatedSchedule, 
-      days: JSON.parse(updatedSchedule.days),
+      days: parsedDays,
       synced_to_device: sent 
     });
 
   } catch (error) {
     console.error('Error updating schedule:', error);
-    res.status(500).json({ error: 'Database error' });
+    res.status(500).json({ error: 'Database error: ' + error.message });
   }
 });
 
