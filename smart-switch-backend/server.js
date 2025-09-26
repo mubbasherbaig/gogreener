@@ -462,28 +462,155 @@ app.post('/api/admin/devices/:deviceId/control', authenticateToken, requireAdmin
   }
 });
 
-app.get('/api/devices/:deviceId/schedules', authenticateToken, async (req, res) => {
+// Replace your schedule creation endpoint with this debug version
+app.post('/api/devices/:deviceId/schedules', authenticateToken, async (req, res) => {
   const { deviceId } = req.params;
+  const { name, time, action, days, enabled = true, repeat_type = 'weekly' } = req.body;
+
+  console.log('=== BACKEND DEBUG - SCHEDULE CREATION ===');
+  console.log('URL deviceId:', deviceId);
+  console.log('Full request body:', JSON.stringify(req.body, null, 2));
+  console.log('User info:', { id: req.user.id, username: req.user.username });
+  console.log('Parsed fields:', { name, time, action, days, enabled, repeat_type });
+  console.log('Days type:', typeof days, 'Days value:', days);
 
   try {
-    // Verify user owns the device
+    // Step 1: Check if device exists and user owns it
+    console.log('Step 1: Checking device ownership...');
     const deviceCheck = await db.query(
-      'SELECT * FROM devices WHERE id = $1 AND (user_id = $2 OR $3 = $4)',
-      [deviceId, req.user.id, req.user.role, 'admin']
-    );
-    
-    if (deviceCheck.rows.length === 0) {
-      return res.status(404).json({ error: 'Device not found or access denied' });
-    }
-
-    const result = await db.query(
-      'SELECT * FROM schedules WHERE device_id = $1 ORDER BY hour, minute',
+      'SELECT id, name, user_id FROM devices WHERE id = $1',
       [deviceId]
     );
     
-    res.json(result.rows);
+    console.log('Device query result:', deviceCheck.rows);
+    
+    if (deviceCheck.rows.length === 0) {
+      console.log('ERROR: Device not found in database');
+      return res.status(404).json({ error: `Device ${deviceId} not found` });
+    }
+
+    const device = deviceCheck.rows[0];
+    console.log('Found device:', device);
+    console.log('User owns device?', device.user_id === req.user.id);
+    console.log('User is admin?', req.user.role === 'admin');
+
+    if (device.user_id !== req.user.id && req.user.role !== 'admin') {
+      console.log('ERROR: Access denied - user does not own device');
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    // Step 2: Parse and validate time
+    console.log('Step 2: Parsing time...');
+    if (!time || !time.includes(':')) {
+      console.log('ERROR: Invalid time format:', time);
+      return res.status(400).json({ error: 'Invalid time format' });
+    }
+    
+    const [hour, minute] = time.split(':').map(Number);
+    console.log('Parsed time:', { hour, minute });
+    
+    // Step 3: Validate all input data
+    console.log('Step 3: Validating input...');
+    const validations = {
+      name_valid: !!name && name.trim().length > 0,
+      hour_valid: hour >= 0 && hour <= 23,
+      minute_valid: minute >= 0 && minute <= 59,
+      days_valid: Array.isArray(days) && days.length > 0,
+      action_valid: action === 'turn_on' || action === 'turn_off'
+    };
+    
+    console.log('Validation results:', validations);
+    
+    if (!validations.name_valid) {
+      return res.status(400).json({ error: 'Schedule name is required' });
+    }
+    if (!validations.hour_valid || !validations.minute_valid) {
+      return res.status(400).json({ error: 'Invalid time values' });
+    }
+    if (!validations.days_valid) {
+      return res.status(400).json({ error: 'At least one day must be selected' });
+    }
+    if (!validations.action_valid) {
+      return res.status(400).json({ error: 'Action must be turn_on or turn_off' });
+    }
+
+    // Step 4: Prepare data for database
+    console.log('Step 4: Preparing data for database...');
+    const dbData = {
+      device_id: deviceId,
+      name: name.trim(),
+      hour: hour,
+      minute: minute,
+      action: action,
+      days: JSON.stringify(days),
+      enabled: enabled,
+      repeat_type: repeat_type
+    };
+    
+    console.log('Database insert data:', dbData);
+    console.log('Days JSON string:', dbData.days);
+
+    // Step 5: Insert into database
+    console.log('Step 5: Inserting into database...');
+    const result = await db.query(
+      `INSERT INTO schedules (device_id, name, hour, minute, action, days, enabled, repeat_type) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+      [dbData.device_id, dbData.name, dbData.hour, dbData.minute, dbData.action, dbData.days, dbData.enabled, dbData.repeat_type]
+    );
+
+    console.log('SUCCESS: Schedule created:', result.rows[0]);
+
+    // Step 6: Send to device if online
+    console.log('Step 6: Sending to device...');
+    const newSchedule = result.rows[0];
+    const scheduleCommand = {
+      type: 'command',
+      command_type: 'schedule',
+      schedule_action: 'add',
+      slot: -1,
+      enabled: newSchedule.enabled,
+      action: newSchedule.action,
+      hour: newSchedule.hour,
+      minute: newSchedule.minute,
+      days: convertDaysToNumbers(JSON.parse(newSchedule.days)),
+      schedule_id: newSchedule.id
+    };
+
+    const sent = sendCommandToDevice(deviceId, scheduleCommand);
+    console.log('Device command sent:', sent);
+    
+    // Return success response
+    const response = { 
+      ...newSchedule, 
+      days: JSON.parse(newSchedule.days),
+      synced_to_device: sent 
+    };
+    
+    console.log('Sending response:', response);
+    console.log('=== END BACKEND DEBUG ===');
+    
+    res.json(response);
+
   } catch (error) {
-    res.status(500).json({ error: 'Database error' });
+    console.error('=== DATABASE ERROR OCCURRED ===');
+    console.error('Error type:', error.constructor.name);
+    console.error('Error message:', error.message);
+    console.error('Error code:', error.code);
+    console.error('Error detail:', error.detail);
+    console.error('Error constraint:', error.constraint);
+    console.error('Error table:', error.table);
+    console.error('Error column:', error.column);
+    console.error('Full error object:', JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
+    console.error('Stack trace:', error.stack);
+    console.error('=== END ERROR DEBUG ===');
+    
+    // Send detailed error back
+    res.status(500).json({ 
+      error: 'Database error occurred',
+      message: error.message,
+      code: error.code,
+      detail: error.detail
+    });
   }
 });
 
