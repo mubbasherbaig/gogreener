@@ -98,6 +98,25 @@ wss.on('connection', (ws, req) => {
                       [deviceId, switch_state, current_reading || 0, voltage || 0]);
         
         broadcastDeviceUpdate(deviceId, { switch_state, current_reading, voltage });
+      } else if (message.type === 'schedule_executed') {
+        // ADD THIS NEW CASE
+        const { deviceId, schedule_id, action, current_state } = message;
+        
+        console.log(`Schedule ${schedule_id} executed on device ${deviceId}: ${action}`);
+        
+        // Update device state in database
+        await db.query('UPDATE devices SET is_online = true, last_seen = CURRENT_TIMESTAMP WHERE id = $1', [deviceId]);
+        await db.query('INSERT INTO device_states (device_id, switch_state, current_reading, voltage) VALUES ($1, $2, $3, $4)',
+                      [deviceId, current_state, 0, 230]);
+        
+        // Broadcast the state change to connected users
+        broadcastDeviceUpdate(deviceId, { 
+          switch_state: current_state, 
+          current_reading: 0, 
+          voltage: 230,
+          triggered_by_schedule: true,
+          schedule_id: schedule_id
+        });
       }
       
     } catch (error) {
@@ -442,6 +461,261 @@ app.post('/api/admin/devices/:deviceId/control', authenticateToken, requireAdmin
     res.status(500).json({ error: 'Database error' });
   }
 });
+
+app.get('/api/devices/:deviceId/schedules', authenticateToken, async (req, res) => {
+  const { deviceId } = req.params;
+
+  try {
+    // Verify user owns the device
+    const deviceCheck = await db.query(
+      'SELECT * FROM devices WHERE id = $1 AND (user_id = $2 OR $3 = $4)',
+      [deviceId, req.user.id, req.user.role, 'admin']
+    );
+    
+    if (deviceCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Device not found or access denied' });
+    }
+
+    const result = await db.query(
+      'SELECT * FROM schedules WHERE device_id = $1 ORDER BY hour, minute',
+      [deviceId]
+    );
+    
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// Create a new schedule
+app.post('/api/devices/:deviceId/schedules', authenticateToken, async (req, res) => {
+  const { deviceId } = req.params;
+  const { name, time, action, days, enabled = true, repeat_type = 'weekly' } = req.body;
+
+  try {
+    // Verify user owns the device
+    const deviceCheck = await db.query(
+      'SELECT * FROM devices WHERE id = $1 AND (user_id = $2 OR $3 = $4)',
+      [deviceId, req.user.id, req.user.role, 'admin']
+    );
+    
+    if (deviceCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Device not found or access denied' });
+    }
+
+    // Parse time (HH:MM format)
+    const [hour, minute] = time.split(':').map(Number);
+    
+    // Validate input
+    if (!name || hour < 0 || hour > 23 || minute < 0 || minute > 59 || !days || days.length === 0) {
+      return res.status(400).json({ error: 'Invalid schedule data' });
+    }
+
+    // Insert schedule into database
+    const result = await db.query(
+      `INSERT INTO schedules 
+       (device_id, name, hour, minute, action, days, enabled, repeat_type) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
+       RETURNING *`,
+      [deviceId, name, hour, minute, action, JSON.stringify(days), enabled, repeat_type]
+    );
+
+    const newSchedule = result.rows[0];
+
+    // Send schedule to device if it's online
+    const scheduleCommand = {
+      type: 'command',
+      command_type: 'schedule',
+      schedule_action: 'add',
+      slot: -1, // Let device find empty slot
+      enabled: newSchedule.enabled,
+      action: newSchedule.action,
+      hour: newSchedule.hour,
+      minute: newSchedule.minute,
+      days: convertDaysToNumbers(JSON.parse(newSchedule.days)),
+      schedule_id: newSchedule.id
+    };
+
+    const sent = sendCommandToDevice(deviceId, scheduleCommand);
+    
+    res.json({ 
+      ...newSchedule, 
+      days: JSON.parse(newSchedule.days),
+      synced_to_device: sent 
+    });
+
+  } catch (error) {
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// Update a schedule
+app.put('/api/devices/:deviceId/schedules/:scheduleId', authenticateToken, async (req, res) => {
+  const { deviceId, scheduleId } = req.params;
+  const { name, time, action, days, enabled, repeat_type } = req.body;
+
+  try {
+    // Verify user owns the device and schedule exists
+    const scheduleCheck = await db.query(
+      `SELECT s.* FROM schedules s 
+       JOIN devices d ON s.device_id = d.id 
+       WHERE s.id = $1 AND s.device_id = $2 AND (d.user_id = $3 OR $4 = $5)`,
+      [scheduleId, deviceId, req.user.id, req.user.role, 'admin']
+    );
+    
+    if (scheduleCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Schedule not found or access denied' });
+    }
+
+    const [hour, minute] = time.split(':').map(Number);
+
+    // Update schedule in database
+    const result = await db.query(
+      `UPDATE schedules 
+       SET name = $1, hour = $2, minute = $3, action = $4, days = $5, 
+           enabled = $6, repeat_type = $7, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $8 AND device_id = $9 
+       RETURNING *`,
+      [name, hour, minute, action, JSON.stringify(days), enabled, repeat_type, scheduleId, deviceId]
+    );
+
+    const updatedSchedule = result.rows[0];
+
+    // Send update to device if it's online
+    const scheduleCommand = {
+      type: 'command',
+      command_type: 'schedule',
+      schedule_action: 'add', // Using add to update/overwrite
+      slot: scheduleCheck.rows[0].device_slot || -1,
+      enabled: updatedSchedule.enabled,
+      action: updatedSchedule.action,
+      hour: updatedSchedule.hour,
+      minute: updatedSchedule.minute,
+      days: convertDaysToNumbers(JSON.parse(updatedSchedule.days)),
+      schedule_id: updatedSchedule.id
+    };
+
+    const sent = sendCommandToDevice(deviceId, scheduleCommand);
+
+    res.json({ 
+      ...updatedSchedule, 
+      days: JSON.parse(updatedSchedule.days),
+      synced_to_device: sent 
+    });
+
+  } catch (error) {
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// Delete a schedule
+app.delete('/api/devices/:deviceId/schedules/:scheduleId', authenticateToken, async (req, res) => {
+  const { deviceId, scheduleId } = req.params;
+
+  try {
+    // Verify user owns the device and schedule exists
+    const scheduleCheck = await db.query(
+      `SELECT s.* FROM schedules s 
+       JOIN devices d ON s.device_id = d.id 
+       WHERE s.id = $1 AND s.device_id = $2 AND (d.user_id = $3 OR $4 = $5)`,
+      [scheduleId, deviceId, req.user.id, req.user.role, 'admin']
+    );
+    
+    if (scheduleCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Schedule not found or access denied' });
+    }
+
+    // Delete from database
+    await db.query('DELETE FROM schedules WHERE id = $1 AND device_id = $2', [scheduleId, deviceId]);
+
+    // Send delete command to device if it's online
+    const deleteCommand = {
+      type: 'command',
+      command_type: 'schedule',
+      schedule_action: 'delete',
+      slot: scheduleCheck.rows[0].device_slot || -1,
+      schedule_id: parseInt(scheduleId)
+    };
+
+    const sent = sendCommandToDevice(deviceId, deleteCommand);
+
+    res.json({ message: 'Schedule deleted successfully', synced_to_device: sent });
+
+  } catch (error) {
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// Sync all schedules to device
+app.post('/api/devices/:deviceId/schedules/sync', authenticateToken, async (req, res) => {
+  const { deviceId } = req.params;
+
+  try {
+    // Verify user owns the device
+    const deviceCheck = await db.query(
+      'SELECT * FROM devices WHERE id = $1 AND (user_id = $2 OR $3 = $4)',
+      [deviceId, req.user.id, req.user.role, 'admin']
+    );
+    
+    if (deviceCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Device not found or access denied' });
+    }
+
+    // Get all schedules for this device
+    const schedules = await db.query(
+      'SELECT * FROM schedules WHERE device_id = $1 ORDER BY id',
+      [deviceId]
+    );
+
+    if (!deviceConnections.has(deviceId)) {
+      return res.json({ message: 'Device is offline - schedules will sync when device comes online', count: schedules.rows.length });
+    }
+
+    // Clear all schedules on device first
+    sendCommandToDevice(deviceId, {
+      type: 'command',
+      command_type: 'schedule',
+      schedule_action: 'clear_all'
+    });
+
+    // Send each schedule to device
+    let syncCount = 0;
+    schedules.rows.forEach((schedule, index) => {
+      const scheduleCommand = {
+        type: 'command',
+        command_type: 'schedule',
+        schedule_action: 'add',
+        slot: index,
+        enabled: schedule.enabled,
+        action: schedule.action,
+        hour: schedule.hour,
+        minute: schedule.minute,
+        days: convertDaysToNumbers(JSON.parse(schedule.days)),
+        schedule_id: schedule.id
+      };
+
+      if (sendCommandToDevice(deviceId, scheduleCommand)) {
+        syncCount++;
+      }
+    });
+
+    res.json({ message: 'Schedules synced to device', synced_count: syncCount, total_count: schedules.rows.length });
+
+  } catch (error) {
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// Helper function to convert day names to numbers (Sunday = 0, Monday = 1, etc.)
+function convertDaysToNumbers(dayNames) {
+  const dayMap = {
+    'sunday': 0, 'monday': 1, 'tuesday': 2, 'wednesday': 3,
+    'thursday': 4, 'friday': 5, 'saturday': 6
+  };
+  
+  return dayNames.map(day => dayMap[day.toLowerCase()]).filter(num => num !== undefined);
+}
+
 
 // Health check
 app.get('/api/health', (req, res) => {
