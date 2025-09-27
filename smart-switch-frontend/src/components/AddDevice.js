@@ -35,7 +35,15 @@ const AddDevice = ({ onClose, onDeviceAdded }) => {
 
       // Get camera stream
       const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: 'environment' } // Use back camera
+        video: { 
+          facingMode: 'environment',
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          advanced: [
+            { zoom: 1.0 },
+            { focusMode: 'continuous' }
+          ]
+        }
       });
       
       video.srcObject = stream;
