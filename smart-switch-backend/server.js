@@ -378,6 +378,27 @@ app.get('/api/devices/:deviceId/telemetry', authenticateToken, async (req, res) 
   }
 });
 
+// Check if device is registered
+app.get('/api/devices/check/:deviceId', authenticateToken, async (req, res) => {
+  const { deviceId } = req.params;
+  try {
+    const result = await db.query(
+      'SELECT * FROM devices WHERE id = $1 AND user_id = $2',
+      [deviceId, req.user.id]
+    );
+    res.json({ registered: result.rows.length > 0 });
+  } catch (error) {
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// Auto-detect WiFi setup completion
+app.post('/api/devices/setup-complete', async (req, res) => {
+  const { deviceId } = req.body;
+  // Mark setup as ready for registration
+  res.json({ message: 'Setup marked complete' });
+});
+
 app.delete('/api/devices/:deviceId', authenticateToken, async (req, res) => {
   const { deviceId } = req.params;
 

@@ -5,6 +5,7 @@ import Dashboard from './components/Dashboard';
 import AdminPanel from './components/AdminPanel';
 import './App.css';
 import logo from './assets/logo.png';
+import DeviceSetup from './components/DeviceSetup';
 
 function App() {
   const [user, setUser] = useState(null);
@@ -78,6 +79,8 @@ function App() {
               )
             } 
           />
+          <Route path="/device-setup" element={<DeviceSetup />} />
+
           <Route 
             path="/admin" 
             element={user?.role === 'admin' ? <AdminPanel /> : <Navigate to="/" />} 

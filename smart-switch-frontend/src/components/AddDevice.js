@@ -18,13 +18,9 @@ const AddDevice = ({ onClose, onDeviceAdded }) => {
   };
 
   const simulateQRScan = () => {
-    // Simulate QR code scan - generates random device ID
-    const randomId = 'ESP32_' + Math.random().toString(36).substring(2, 10).toUpperCase();
-    setDeviceData({
-      ...deviceData,
-      deviceId: randomId,
-      deviceName: `Smart Switch ${randomId.slice(-4)}`
-    });
+    // Open camera for QR scanning or redirect to setup page
+    const deviceId = 'ESP8266_' + Math.random().toString(36).substring(2, 10).toUpperCase();
+    window.open(`/device-setup?id=${deviceId}`, '_blank');
   };
 
   const handleSubmit = async (e) => {
