@@ -80,7 +80,7 @@ function App() {
             } 
           />
           <Route path="/device-setup" element={<DeviceSetup />} />
-
+          <Route path="/setup-guide" element={<SetupGuide />} />
           <Route 
             path="/admin" 
             element={user?.role === 'admin' ? <AdminPanel /> : <Navigate to="/" />} 
