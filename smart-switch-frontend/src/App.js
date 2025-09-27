@@ -6,7 +6,7 @@ import AdminPanel from './components/AdminPanel';
 import './App.css';
 import logo from './assets/logo.png';
 import DeviceSetup from './components/DeviceSetup';
-
+import DeviceSetup from './components/SetupGuide'
 function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
