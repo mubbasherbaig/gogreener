@@ -265,7 +265,12 @@ function getNextScheduleTime(schedules) {
       }
     } catch (error) {
       console.error(`Skipping schedule ${schedule.id} due to parsing error:`, error.message);
-      continue;
+      // Attempt to recover by splitting comma-separated string
+      scheduleDays = typeof schedule.days === 'string' ? schedule.days.split(',').map(day => day.trim()) : [];
+      if (scheduleDays.length === 0) {
+        console.error(`No valid days for schedule ${schedule.id}`);
+        continue;
+      }
     }
     
     const scheduleDayNumbers = convertDaysToNumbers(scheduleDays);
@@ -817,6 +822,20 @@ app.post('/api/devices/:deviceId/schedules', authenticateToken, async (req, res)
 
     // Send schedule to device if it's online
     try {
+      let parsedDays;
+      try {
+        parsedDays = JSON.parse(newSchedule.days);
+        // Ensure parsedDays is an array
+        if (!Array.isArray(parsedDays)) {
+          console.warn(`Parsed days is not an array for schedule ${newSchedule.id}:`, parsedDays);
+          parsedDays = newSchedule.days.split(',').map(day => day.trim());
+        }
+      } catch (e) {
+        console.error('Error parsing days from database:', e);
+        // Fallback to the original daysArray from the request
+        parsedDays = daysArray;
+      }
+
       const scheduleCommand = {
         type: 'command',
         command_type: 'schedule',
@@ -838,13 +857,11 @@ app.post('/api/devices/:deviceId/schedules', authenticateToken, async (req, res)
         days: parsedDays,
         synced_to_device: sent 
       });
-
     } catch (deviceError) {
       console.error('Error sending to device:', deviceError);
-      // Still return success since database save worked
       res.json({ 
         ...newSchedule, 
-        days: parsedDays,
+        days: daysArray, // Use original daysArray as fallback
         synced_to_device: false,
         sync_error: deviceError.message
       });
@@ -911,7 +928,16 @@ app.put('/api/devices/:deviceId/schedules/:scheduleId', authenticateToken, async
     const updatedSchedule = result.rows[0];
 
     // Parse days for response
-    const parsedDays = JSON.parse(updatedSchedule.days);
+    let parsedDays;
+    try {
+      parsedDays = JSON.parse(updatedSchedule.days);
+      if (!Array.isArray(parsedDays)) {
+        parsedDays = updatedSchedule.days.split(',').map(day => day.trim());
+      }
+    } catch (e) {
+      console.error('Error parsing updated days:', e);
+      parsedDays = daysArray; // Fallback to input days
+    }
 
     // Send update to device if it's online
     const scheduleCommand = {
@@ -1136,7 +1162,6 @@ async function getExpectedDeviceState(deviceId) {
     const currentMinute = now.getMinutes();
     const currentDayOfWeek = now.getDay();
     
-    // Get all enabled schedules
     const schedulesResult = await db.query(
       `SELECT * FROM schedules 
        WHERE device_id = $1 AND enabled = true 
@@ -1150,7 +1175,7 @@ async function getExpectedDeviceState(deviceId) {
 
     let expectedAction = null;
     let triggeringSchedule = null;
-    const GRACE_PERIOD_MINUTES = 2; // Don't correct if schedule triggered within last 2 minutes
+    const GRACE_PERIOD_MINUTES = 2;
 
     for (const schedule of schedulesResult.rows) {
       try {
@@ -1177,12 +1202,10 @@ async function getExpectedDeviceState(deviceId) {
           const scheduleHour = schedule.hour;
           const scheduleMinute = schedule.minute;
           
-          // Calculate minutes since schedule time
           const scheduleTimeInMinutes = scheduleHour * 60 + scheduleMinute;
           const currentTimeInMinutes = currentHour * 60 + currentMinute;
           const minutesSinceSchedule = currentTimeInMinutes - scheduleTimeInMinutes;
           
-          // Only consider schedules that triggered at least GRACE_PERIOD_MINUTES ago
           if (minutesSinceSchedule >= GRACE_PERIOD_MINUTES) {
             expectedAction = schedule.action;
             triggeringSchedule = schedule;
@@ -1190,7 +1213,26 @@ async function getExpectedDeviceState(deviceId) {
         }
       } catch (error) {
         console.error(`Error parsing schedule ${schedule.id}:`, error);
-        continue;
+        // Attempt to recover by splitting comma-separated string
+        scheduleDays = typeof schedule.days === 'string' ? schedule.days.split(',').map(day => day.trim()) : [];
+        if (scheduleDays.length === 0) {
+          console.error(`No valid days for schedule ${schedule.id}`);
+          continue;
+        }
+        const scheduleDayNumbers = convertDaysToNumbers(scheduleDays);
+        if (scheduleDayNumbers.includes(currentDayOfWeek)) {
+          const scheduleHour = schedule.hour;
+          const scheduleMinute = schedule.minute;
+          
+          const scheduleTimeInMinutes = scheduleHour * 60 + scheduleMinute;
+          const currentTimeInMinutes = currentHour * 60 + currentMinute;
+          const minutesSinceSchedule = currentTimeInMinutes - scheduleTimeInMinutes;
+          
+          if (minutesSinceSchedule >= GRACE_PERIOD_MINUTES) {
+            expectedAction = schedule.action;
+            triggeringSchedule = schedule;
+          }
+        }
       }
     }
 
@@ -1228,6 +1270,7 @@ async function getExpectedDeviceState(deviceId) {
             break;
           }
         } catch (error) {
+          console.error(`Error parsing schedule ${schedule.id} for yesterday:`, error);
           continue;
         }
       }
