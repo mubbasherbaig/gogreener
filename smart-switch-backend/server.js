@@ -999,104 +999,103 @@ app.get('/api/test/database', async (req, res) => {
   }
 });
 
-// ADD THESE FUNCTIONS TO YOUR EXISTING server.js
-
-// Function to determine what the device state should be based on current time and schedules
 async function getExpectedDeviceState(deviceId) {
   try {
     const now = new Date();
     const currentHour = now.getHours();
     const currentMinute = now.getMinutes();
-    const currentDayOfWeek = now.getDay(); // Sunday = 0, Monday = 1, etc.
+    const currentDayOfWeek = now.getDay();
     
-    // Get all enabled schedules for this device, ordered by time (latest first)
+    // Get all enabled schedules for this device, ordered by time (EARLIEST first)
     const schedulesResult = await db.query(
       `SELECT * FROM schedules 
        WHERE device_id = $1 AND enabled = true 
-       ORDER BY hour DESC, minute DESC`,
+       ORDER BY hour ASC, minute ASC`,  // Changed to ASC
       [deviceId]
     );
 
     if (schedulesResult.rows.length === 0) {
-      return null; // No schedules, can't determine expected state
+      return null;
     }
 
     let expectedAction = null;
     let triggeringSchedule = null;
 
-    // Find the most recent schedule that should have triggered today
+    // Find ALL schedules that should have triggered today, keep the LAST one
     for (const schedule of schedulesResult.rows) {
       try {
         let scheduleDays;
-        try {
-          // Check if it's already an array (JSONB column)
-          if (Array.isArray(schedule.days)) {
-            scheduleDays = schedule.days;
-          } else if (typeof schedule.days === 'string') {
-            const daysStr = schedule.days.trim();
-            
-            // Check if it's JSON format (starts with [ or ")
-            if (daysStr.startsWith('[') || daysStr.startsWith('"[')) {
-              scheduleDays = JSON.parse(daysStr);
-              if (typeof scheduleDays === 'string') {
-                scheduleDays = JSON.parse(scheduleDays); // Handle double-escaped
-              }
-            } 
-            // Check if it's comma-separated
-            else if (daysStr.includes(',')) {
-              scheduleDays = daysStr.split(',').map(day => day.trim());
+        if (Array.isArray(schedule.days)) {
+          scheduleDays = schedule.days;
+        } else if (typeof schedule.days === 'string') {
+          const daysStr = schedule.days.trim();
+          if (daysStr.startsWith('[')) {
+            scheduleDays = JSON.parse(daysStr);
+            if (typeof scheduleDays === 'string') {
+              scheduleDays = JSON.parse(scheduleDays);
             }
-            // Handle single day as string
-            else {
-              scheduleDays = [daysStr]; // Convert single string to array
-              console.log(`Fixed single day format for schedule ${schedule.id}: ${daysStr} -> [${daysStr}]`);
-            }
+          } else if (daysStr.includes(',')) {
+            scheduleDays = daysStr.split(',').map(day => day.trim());
           } else {
-            throw new Error(`Unexpected data type: ${typeof schedule.days}`);
+            scheduleDays = [daysStr];
           }
-        } catch (error) {
-          console.error(`Invalid days format in schedule ${schedule.id}: ${schedule.days}`);
-          continue;
         }
+        
         const scheduleDayNumbers = convertDaysToNumbers(scheduleDays);
         
-        // Check if schedule applies to current day
         if (scheduleDayNumbers.includes(currentDayOfWeek)) {
           const scheduleHour = schedule.hour;
           const scheduleMinute = schedule.minute;
           
-          // Check if this schedule should have triggered already today
+          // Has this schedule already passed today?
           if (currentHour > scheduleHour || 
               (currentHour === scheduleHour && currentMinute >= scheduleMinute)) {
+            // Keep updating to get the MOST RECENT one
             expectedAction = schedule.action;
             triggeringSchedule = schedule;
-            break; // Found the most recent applicable schedule
           }
         }
       } catch (error) {
-        console.error(`Error parsing schedule days for schedule ${schedule.id}:`, error);
+        console.error(`Error parsing schedule ${schedule.id}:`, error);
         continue;
       }
     }
 
-    // If no schedule has triggered today, check yesterday's last schedule
+    // Only check yesterday if NO schedule triggered today
     if (expectedAction === null) {
       const yesterday = new Date(now);
       yesterday.setDate(yesterday.getDate() - 1);
       const yesterdayDayOfWeek = yesterday.getDay();
       
-      for (const schedule of schedulesResult.rows) {
+      // Find yesterday's LAST schedule by checking in reverse
+      for (let i = schedulesResult.rows.length - 1; i >= 0; i--) {
+        const schedule = schedulesResult.rows[i];
         try {
-          const scheduleDays = JSON.parse(schedule.days);
+          let scheduleDays;
+          if (Array.isArray(schedule.days)) {
+            scheduleDays = schedule.days;
+          } else if (typeof schedule.days === 'string') {
+            const daysStr = schedule.days.trim();
+            if (daysStr.startsWith('[')) {
+              scheduleDays = JSON.parse(daysStr);
+              if (typeof scheduleDays === 'string') {
+                scheduleDays = JSON.parse(scheduleDays);
+              }
+            } else if (daysStr.includes(',')) {
+              scheduleDays = daysStr.split(',').map(day => day.trim());
+            } else {
+              scheduleDays = [daysStr];
+            }
+          }
+          
           const scheduleDayNumbers = convertDaysToNumbers(scheduleDays);
           
           if (scheduleDayNumbers.includes(yesterdayDayOfWeek)) {
             expectedAction = schedule.action;
             triggeringSchedule = schedule;
-            break;
+            break; // Take the last schedule from yesterday
           }
         } catch (error) {
-          console.error(`Error parsing schedule days for schedule ${schedule.id}:`, error);
           continue;
         }
       }
