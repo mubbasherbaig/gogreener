@@ -1006,11 +1006,11 @@ async function getExpectedDeviceState(deviceId) {
     const currentMinute = now.getMinutes();
     const currentDayOfWeek = now.getDay();
     
-    // Get all enabled schedules for this device, ordered by time (EARLIEST first)
+    // Get all enabled schedules
     const schedulesResult = await db.query(
       `SELECT * FROM schedules 
        WHERE device_id = $1 AND enabled = true 
-       ORDER BY hour ASC, minute ASC`,  // Changed to ASC
+       ORDER BY hour ASC, minute ASC`,
       [deviceId]
     );
 
@@ -1020,8 +1020,8 @@ async function getExpectedDeviceState(deviceId) {
 
     let expectedAction = null;
     let triggeringSchedule = null;
+    const GRACE_PERIOD_MINUTES = 2; // Don't correct if schedule triggered within last 2 minutes
 
-    // Find ALL schedules that should have triggered today, keep the LAST one
     for (const schedule of schedulesResult.rows) {
       try {
         let scheduleDays;
@@ -1047,10 +1047,13 @@ async function getExpectedDeviceState(deviceId) {
           const scheduleHour = schedule.hour;
           const scheduleMinute = schedule.minute;
           
-          // Has this schedule already passed today?
-          if (currentHour > scheduleHour || 
-              (currentHour === scheduleHour && currentMinute >= scheduleMinute)) {
-            // Keep updating to get the MOST RECENT one
+          // Calculate minutes since schedule time
+          const scheduleTimeInMinutes = scheduleHour * 60 + scheduleMinute;
+          const currentTimeInMinutes = currentHour * 60 + currentMinute;
+          const minutesSinceSchedule = currentTimeInMinutes - scheduleTimeInMinutes;
+          
+          // Only consider schedules that triggered at least GRACE_PERIOD_MINUTES ago
+          if (minutesSinceSchedule >= GRACE_PERIOD_MINUTES) {
             expectedAction = schedule.action;
             triggeringSchedule = schedule;
           }
@@ -1061,13 +1064,12 @@ async function getExpectedDeviceState(deviceId) {
       }
     }
 
-    // Only check yesterday if NO schedule triggered today
+    // Check yesterday only if no schedule from today
     if (expectedAction === null) {
       const yesterday = new Date(now);
       yesterday.setDate(yesterday.getDate() - 1);
       const yesterdayDayOfWeek = yesterday.getDay();
       
-      // Find yesterday's LAST schedule by checking in reverse
       for (let i = schedulesResult.rows.length - 1; i >= 0; i--) {
         const schedule = schedulesResult.rows[i];
         try {
@@ -1093,7 +1095,7 @@ async function getExpectedDeviceState(deviceId) {
           if (scheduleDayNumbers.includes(yesterdayDayOfWeek)) {
             expectedAction = schedule.action;
             triggeringSchedule = schedule;
-            break; // Take the last schedule from yesterday
+            break;
           }
         } catch (error) {
           continue;
