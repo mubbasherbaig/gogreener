@@ -305,76 +305,70 @@ function getNextScheduleTime(schedules) {
 // Function to setup schedule verification for a device
 async function setupScheduleVerification(deviceId) {
   try {
-    // Get all enabled schedules for this device
     const result = await db.query(
       'SELECT * FROM schedules WHERE device_id = $1 AND enabled = true ORDER BY hour, minute',
       [deviceId]
     );
     
     if (result.rows.length === 0) {
-      console.log(`No schedules for ${deviceId} - verification disabled`);
+      console.log(`No schedules for ${deviceId}`);
       return;
     }
     
     const { schedule, minutesUntil } = getNextScheduleTime(result.rows);
     
-    if (!schedule) {
+    if (!schedule || minutesUntil === Infinity) {
       console.log(`No upcoming schedules for ${deviceId}`);
       return;
     }
     
-    // Clear existing timer if any
     if (scheduleTimers.has(deviceId)) {
       clearTimeout(scheduleTimers.get(deviceId));
     }
     
-    // Calculate milliseconds until 30 seconds AFTER schedule time
-    const msUntilCheck = (minutesUntil * 60 * 1000) + 30000; // +30 seconds grace period
+    const msUntilCheck = (minutesUntil * 60 * 1000) + 30000;
     
-    console.log(`Next check for ${deviceId}: ${schedule.name} at ${schedule.hour}:${schedule.minute} (in ${minutesUntil} minutes, will check 30s after)`);
-    console.log(`Timer will fire at: ${new Date(Date.now() + msUntilCheck).toLocaleString()}`);
-
-    // Set timer to check 30 seconds after schedule time
+    console.log(`⏰ Next check for ${deviceId}: "${schedule.name}" at ${schedule.hour}:${String(schedule.minute).padStart(2,'0')} (in ${minutesUntil} min)`);
+    
     const timer = setTimeout(async () => {
-      console.log(`⏰ Checking if schedule ${schedule.name} executed for ${deviceId}`);
+      console.log(`\n⏰ TIMER FIRED for ${deviceId} - Checking schedule "${schedule.name}"`);
       
-      // Get current device state
-      const stateResult = await db.query(
-        'SELECT switch_state FROM device_states WHERE device_id = $1 ORDER BY timestamp DESC LIMIT 1',
-        [deviceId]
-      );
-      
-      if (stateResult.rows.length > 0) {
-        const actualState = stateResult.rows[0].switch_state;
-        const expectedState = schedule.action === 'turn_on';
+      try {
+        const stateResult = await db.query(
+          'SELECT switch_state FROM device_states WHERE device_id = $1 ORDER BY timestamp DESC LIMIT 1',
+          [deviceId]
+        );
         
-        if (actualState !== expectedState) {
-          console.log(`🔧 Schedule ${schedule.name} was MISSED - correcting now`);
+        if (stateResult.rows.length > 0) {
+          const actualState = stateResult.rows[0].switch_state;
+          const expectedState = schedule.action === 'turn_on';
           
-          // Send correction
-          const correctionCommand = {
-            type: 'command',
-            command_type: 'switch',
-            command_value: expectedState.toString(),
-            reason: 'schedule_missed'
-          };
-          
-          const sent = sendCommandToDevice(deviceId, correctionCommand);
-          
-          if (sent) {
-            console.log(`✅ Correction sent for missed schedule`);
+          if (actualState !== expectedState) {
+            console.log(`🔧 MISSED SCHEDULE - Correcting ${deviceId} to ${expectedState ? 'ON' : 'OFF'}`);
+            
+            const correctionCommand = {
+              type: 'command',
+              command_type: 'switch',
+              command_value: expectedState.toString()
+            };
+            
+            sendCommandToDevice(deviceId, correctionCommand);
+            
             await db.query(
               `INSERT INTO device_corrections (device_id, expected_state, actual_state, schedule_id, schedule_name) 
                VALUES ($1, $2, $3, $4, $5)`,
               [deviceId, expectedState, actualState, schedule.id, schedule.name]
             );
+          } else {
+            console.log(`✅ Schedule "${schedule.name}" executed correctly`);
           }
-        } else {
-          console.log(`✅ Schedule ${schedule.name} executed correctly by device`);
         }
+      } catch (error) {
+        console.error(`Error checking schedule:`, error);
       }
       
-      // Setup next schedule check
+      // CRITICAL: Set up next schedule check
+      console.log(`Setting up NEXT schedule check for ${deviceId}...`);
       setupScheduleVerification(deviceId);
       
     }, msUntilCheck);
@@ -382,7 +376,7 @@ async function setupScheduleVerification(deviceId) {
     scheduleTimers.set(deviceId, timer);
     
   } catch (error) {
-    console.error(`Error setting up verification for ${deviceId}:`, error);
+    console.error(`Error in setupScheduleVerification for ${deviceId}:`, error);
   }
 }
 
