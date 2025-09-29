@@ -974,7 +974,6 @@ app.delete('/api/devices/:deviceId/schedules/:scheduleId', authenticateToken, as
     res.status(500).json({ error: 'Database error' });
   }
 });
-setupScheduleVerification(deviceId);
 
 // SYNC all schedules to device
 app.post('/api/devices/:deviceId/schedules/sync', authenticateToken, async (req, res) => {
@@ -1327,6 +1326,7 @@ async function verifyAndCorrectDeviceState(deviceId, actualSwitchState) {
 server.listen(PORT, () => {
   console.log(`HTTP Server with WebSocket running on port ${PORT}`);
 });
+initializeAllScheduleVerifications();
 
 // Cleanup offline devices every 30 seconds
 setInterval(async () => {
