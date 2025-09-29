@@ -1027,7 +1027,17 @@ async function getExpectedDeviceState(deviceId) {
     // Find the most recent schedule that should have triggered today
     for (const schedule of schedulesResult.rows) {
       try {
-        const scheduleDays = JSON.parse(schedule.days);
+        let scheduleDays;
+          try {
+            scheduleDays = JSON.parse(schedule.days);
+            // If it's still a string, parse again (double-escaped JSON)
+            if (typeof scheduleDays === 'string') {
+              scheduleDays = JSON.parse(scheduleDays);
+            }
+          } catch (error) {
+            console.error(`Invalid days format in schedule ${schedule.id}: ${schedule.days}`);
+            continue;
+          }
         const scheduleDayNumbers = convertDaysToNumbers(scheduleDays);
         
         // Check if schedule applies to current day
