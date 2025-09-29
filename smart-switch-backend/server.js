@@ -259,6 +259,7 @@ function getNextScheduleTime(schedules) {
         }
       }
     } catch (error) {
+      console.error(`Error parsing schedule ${schedule.id} in timer setup:`, error);
       continue;
     }
     
@@ -322,7 +323,8 @@ async function setupScheduleVerification(deviceId) {
     const msUntilCheck = (minutesUntil * 60 * 1000) + 30000; // +30 seconds grace period
     
     console.log(`Next check for ${deviceId}: ${schedule.name} at ${schedule.hour}:${schedule.minute} (in ${minutesUntil} minutes, will check 30s after)`);
-    
+    console.log(`Timer will fire at: ${new Date(Date.now() + msUntilCheck).toLocaleString()}`);
+
     // Set timer to check 30 seconds after schedule time
     const timer = setTimeout(async () => {
       console.log(`⏰ Checking if schedule ${schedule.name} executed for ${deviceId}`);
@@ -827,7 +829,7 @@ app.post('/api/devices/:deviceId/schedules', authenticateToken, async (req, res)
 
       const sent = sendCommandToDevice(deviceId, scheduleCommand);
       console.log('Device command sent:', sent);
-      
+      setupScheduleVerification(deviceId);
       res.json({ 
         ...newSchedule, 
         days: parsedDays,
@@ -974,6 +976,7 @@ app.delete('/api/devices/:deviceId/schedules/:scheduleId', authenticateToken, as
     res.status(500).json({ error: 'Database error' });
   }
 });
+setupScheduleVerification(deviceId);
 
 // SYNC all schedules to device
 app.post('/api/devices/:deviceId/schedules/sync', authenticateToken, async (req, res) => {
