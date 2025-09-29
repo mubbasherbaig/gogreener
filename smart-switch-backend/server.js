@@ -1029,21 +1029,27 @@ async function getExpectedDeviceState(deviceId) {
       try {
         let scheduleDays;
         try {
-          // Check if it's already an array (JSONB column returns parsed data)
+          // Check if it's already an array (JSONB column)
           if (Array.isArray(schedule.days)) {
             scheduleDays = schedule.days;
           } else if (typeof schedule.days === 'string') {
-            // Handle comma-separated strings (like "monday,tuesday,wednesday")
-            if (schedule.days.includes(',') && !schedule.days.startsWith('[')) {
-              scheduleDays = schedule.days.split(',').map(day => day.trim());
-              console.log(`Fixed comma-separated format for schedule ${schedule.id}`);
-            } else {
-              // Handle JSON strings
-              scheduleDays = JSON.parse(schedule.days);
-              // Handle double-escaped JSON
+            const daysStr = schedule.days.trim();
+            
+            // Check if it's JSON format (starts with [ or ")
+            if (daysStr.startsWith('[') || daysStr.startsWith('"[')) {
+              scheduleDays = JSON.parse(daysStr);
               if (typeof scheduleDays === 'string') {
-                scheduleDays = JSON.parse(scheduleDays);
+                scheduleDays = JSON.parse(scheduleDays); // Handle double-escaped
               }
+            } 
+            // Check if it's comma-separated
+            else if (daysStr.includes(',')) {
+              scheduleDays = daysStr.split(',').map(day => day.trim());
+            }
+            // Handle single day as string
+            else {
+              scheduleDays = [daysStr]; // Convert single string to array
+              console.log(`Fixed single day format for schedule ${schedule.id}: ${daysStr} -> [${daysStr}]`);
             }
           } else {
             throw new Error(`Unexpected data type: ${typeof schedule.days}`);
