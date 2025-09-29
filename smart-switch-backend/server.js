@@ -134,7 +134,8 @@ const requireAdmin = (req, res, next) => {
   next();
 };
 
-// WebSocket connection handler
+// REPLACE your existing WebSocket handler with this enhanced version
+
 wss.on('connection', (ws, req) => {
   ws.on('message', async (data) => {
     try {
@@ -170,10 +171,15 @@ wss.on('connection', (ws, req) => {
           return;
         }
         
+        // Update device status and save telemetry
         await db.query('UPDATE devices SET is_online = true, last_seen = CURRENT_TIMESTAMP WHERE id = $1', [deviceId]);
         await db.query('INSERT INTO device_states (device_id, switch_state, current_reading, voltage) VALUES ($1, $2, $3, $4)',
                       [deviceId, switch_state, current_reading || 0, voltage || 0]);
         
+        // **NEW: Verify and correct device state based on schedules**
+        await verifyAndCorrectDeviceState(deviceId, switch_state);
+        
+        // Broadcast device update to users
         broadcastDeviceUpdate(deviceId, { switch_state, current_reading, voltage });
         
       } else if (message.type === 'schedule_executed') {
@@ -195,22 +201,22 @@ wss.on('connection', (ws, req) => {
       }
       
     } catch (error) {
-      console.error('WebSocket message error:', error);
+      console.error('Error processing WebSocket message:', error);
     }
   });
-  
-  ws.on('close', async () => {
-    for (const [deviceId, connection] of deviceConnections.entries()) {
-      if (connection === ws) {
+
+  ws.on('close', () => {
+    // Clean up device connections
+    for (let [deviceId, deviceWs] of deviceConnections.entries()) {
+      if (deviceWs === ws) {
         deviceConnections.delete(deviceId);
-        await db.query('UPDATE devices SET is_online = false WHERE id = $1', [deviceId]);
-        broadcastDeviceStatus(deviceId, false);
         console.log(`Device ${deviceId} disconnected`);
         break;
       }
     }
     
-    for (const [userId, connections] of userConnections.entries()) {
+    // Clean up user connections
+    for (let [userId, connections] of userConnections.entries()) {
       const index = connections.indexOf(ws);
       if (index !== -1) {
         connections.splice(index, 1);
@@ -221,6 +227,115 @@ wss.on('connection', (ws, req) => {
       }
     }
   });
+});
+
+// ADD this periodic check after your WebSocket handler
+
+// Periodic schedule verification for all online devices (runs every 5 minutes)
+setInterval(async () => {
+  try {
+    console.log('🔍 Running periodic schedule verification...');
+    
+    const onlineDevicesResult = await db.query(
+      `SELECT DISTINCT ds.device_id, ds.switch_state 
+       FROM device_states ds
+       INNER JOIN (
+         SELECT device_id, MAX(timestamp) as latest_timestamp
+         FROM device_states 
+         WHERE timestamp >= NOW() - INTERVAL '2 minutes'
+         GROUP BY device_id
+       ) latest ON ds.device_id = latest.device_id AND ds.timestamp = latest.latest_timestamp
+       INNER JOIN devices d ON ds.device_id = d.id AND d.is_online = true`
+    );
+    
+    console.log(`Checking ${onlineDevicesResult.rows.length} online devices...`);
+    
+    for (const device of onlineDevicesResult.rows) {
+      await verifyAndCorrectDeviceState(device.device_id, device.switch_state);
+      // Add small delay to avoid overwhelming the system
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    
+    console.log('✅ Periodic schedule verification completed');
+  } catch (error) {
+    console.error('Error in periodic schedule verification:', error);
+  }
+}, 5 * 60 * 1000); // Every 5 minutes
+
+// ADD these API endpoints (put them with your other API routes)
+
+// API endpoint to manually trigger schedule verification for a device
+app.post('/api/devices/:deviceId/verify-schedule', authenticateToken, async (req, res) => {
+  const { deviceId } = req.params;
+  
+  try {
+    // Verify user owns the device
+    const deviceCheck = await db.query(
+      'SELECT * FROM devices WHERE id = $1 AND (user_id = $2 OR $3 = $4)',
+      [deviceId, req.user.id, req.user.role, 'admin']
+    );
+    
+    if (deviceCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Device not found or access denied' });
+    }
+    
+    // Get latest device state
+    const stateResult = await db.query(
+      'SELECT switch_state FROM device_states WHERE device_id = $1 ORDER BY timestamp DESC LIMIT 1',
+      [deviceId]
+    );
+    
+    if (stateResult.rows.length === 0) {
+      return res.status(404).json({ error: 'No device state found' });
+    }
+    
+    const currentSwitchState = stateResult.rows[0].switch_state;
+    
+    // Trigger verification
+    await verifyAndCorrectDeviceState(deviceId, currentSwitchState);
+    
+    res.json({ 
+      message: 'Schedule verification triggered',
+      deviceId,
+      currentState: currentSwitchState 
+    });
+    
+  } catch (error) {
+    console.error('Error in manual schedule verification:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// API endpoint to get schedule correction history
+app.get('/api/devices/:deviceId/corrections', authenticateToken, async (req, res) => {
+  const { deviceId } = req.params;
+  const { limit = 50 } = req.query;
+  
+  try {
+    // Verify user owns the device
+    const deviceCheck = await db.query(
+      'SELECT * FROM devices WHERE id = $1 AND (user_id = $2 OR $3 = $4)',
+      [deviceId, req.user.id, req.user.role, 'admin']
+    );
+    
+    if (deviceCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Device not found or access denied' });
+    }
+    
+    const result = await db.query(
+      `SELECT * FROM device_corrections 
+       WHERE device_id = $1 
+       ORDER BY corrected_at DESC 
+       LIMIT $2`,
+      [deviceId, parseInt(limit)]
+    );
+    
+    res.json(result.rows);
+    
+  } catch (error) {
+    console.error('Error fetching correction history:', error);
+    res.status(500).json({ error: 'Database error' });
+  }
 });
 
 // =================
@@ -882,6 +997,173 @@ app.get('/api/test/database', async (req, res) => {
     });
   }
 });
+
+// ADD THESE FUNCTIONS TO YOUR EXISTING server.js
+
+// Function to determine what the device state should be based on current time and schedules
+async function getExpectedDeviceState(deviceId) {
+  try {
+    const now = new Date();
+    const currentHour = now.getHours();
+    const currentMinute = now.getMinutes();
+    const currentDayOfWeek = now.getDay(); // Sunday = 0, Monday = 1, etc.
+    
+    // Get all enabled schedules for this device, ordered by time (latest first)
+    const schedulesResult = await db.query(
+      `SELECT * FROM schedules 
+       WHERE device_id = $1 AND enabled = true 
+       ORDER BY hour DESC, minute DESC`,
+      [deviceId]
+    );
+
+    if (schedulesResult.rows.length === 0) {
+      return null; // No schedules, can't determine expected state
+    }
+
+    let expectedAction = null;
+    let triggeringSchedule = null;
+
+    // Find the most recent schedule that should have triggered today
+    for (const schedule of schedulesResult.rows) {
+      try {
+        const scheduleDays = JSON.parse(schedule.days);
+        const scheduleDayNumbers = convertDaysToNumbers(scheduleDays);
+        
+        // Check if schedule applies to current day
+        if (scheduleDayNumbers.includes(currentDayOfWeek)) {
+          const scheduleHour = schedule.hour;
+          const scheduleMinute = schedule.minute;
+          
+          // Check if this schedule should have triggered already today
+          if (currentHour > scheduleHour || 
+              (currentHour === scheduleHour && currentMinute >= scheduleMinute)) {
+            expectedAction = schedule.action;
+            triggeringSchedule = schedule;
+            break; // Found the most recent applicable schedule
+          }
+        }
+      } catch (error) {
+        console.error(`Error parsing schedule days for schedule ${schedule.id}:`, error);
+        continue;
+      }
+    }
+
+    // If no schedule has triggered today, check yesterday's last schedule
+    if (expectedAction === null) {
+      const yesterday = new Date(now);
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayDayOfWeek = yesterday.getDay();
+      
+      for (const schedule of schedulesResult.rows) {
+        try {
+          const scheduleDays = JSON.parse(schedule.days);
+          const scheduleDayNumbers = convertDaysToNumbers(scheduleDays);
+          
+          if (scheduleDayNumbers.includes(yesterdayDayOfWeek)) {
+            expectedAction = schedule.action;
+            triggeringSchedule = schedule;
+            break;
+          }
+        } catch (error) {
+          console.error(`Error parsing schedule days for schedule ${schedule.id}:`, error);
+          continue;
+        }
+      }
+    }
+
+    return {
+      expectedState: expectedAction === 'turn_on',
+      triggeringSchedule: triggeringSchedule,
+      currentTime: { hour: currentHour, minute: currentMinute, day: currentDayOfWeek }
+    };
+
+  } catch (error) {
+    console.error(`Error determining expected state for device ${deviceId}:`, error);
+    return null;
+  }
+}
+
+// Function to verify and correct device state
+async function verifyAndCorrectDeviceState(deviceId, actualSwitchState) {
+  try {
+    const expectedStateInfo = await getExpectedDeviceState(deviceId);
+    
+    if (!expectedStateInfo) {
+      // No schedules or unable to determine expected state
+      console.log(`No schedule verification possible for device ${deviceId}`);
+      return;
+    }
+
+    const { expectedState, triggeringSchedule, currentTime } = expectedStateInfo;
+    
+    console.log(`Schedule Verification for ${deviceId}:`, {
+      expected: expectedState,
+      actual: actualSwitchState,
+      currentTime,
+      triggeringSchedule: triggeringSchedule ? {
+        id: triggeringSchedule.id,
+        name: triggeringSchedule.name,
+        action: triggeringSchedule.action,
+        time: `${triggeringSchedule.hour}:${triggeringSchedule.minute.toString().padStart(2, '0')}`
+      } : null
+    });
+
+    // Check if there's a mismatch
+    if (expectedState !== actualSwitchState) {
+      console.log(`🔧 SCHEDULE MISMATCH DETECTED for ${deviceId}!`);
+      console.log(`Expected: ${expectedState ? 'ON' : 'OFF'}, Actual: ${actualSwitchState ? 'ON' : 'OFF'}`);
+      console.log(`Triggering Schedule: ${triggeringSchedule.name} (${triggeringSchedule.action})`);
+      
+      // Send correction command to device
+      const correctionCommand = {
+        type: 'command',
+        command_type: 'switch',
+        command_value: expectedState.toString(),
+        reason: 'schedule_correction',
+        schedule_id: triggeringSchedule.id,
+        schedule_name: triggeringSchedule.name
+      };
+
+      const sent = sendCommandToDevice(deviceId, correctionCommand);
+      
+      if (sent) {
+        console.log(`✅ Correction command sent to ${deviceId}: ${expectedState ? 'ON' : 'OFF'}`);
+        
+        // Log the correction in database for tracking
+        await db.query(
+          `INSERT INTO device_corrections (device_id, expected_state, actual_state, 
+           corrected_at, schedule_id, schedule_name) 
+           VALUES ($1, $2, $3, CURRENT_TIMESTAMP, $4, $5)`,
+          [deviceId, expectedState, actualSwitchState, triggeringSchedule.id, triggeringSchedule.name]
+        );
+        
+        // Broadcast correction to users
+        broadcastDeviceUpdate(deviceId, {
+          switch_state: expectedState,
+          corrected_by_schedule: true,
+          schedule_id: triggeringSchedule.id,
+          schedule_name: triggeringSchedule.name,
+          previous_state: actualSwitchState
+        });
+        
+      } else {
+        console.log(`❌ Failed to send correction command to ${deviceId} (device offline)`);
+        
+        // Queue the command for when device comes back online
+        await db.query(
+          'INSERT INTO commands (device_id, command_type, command_value, reason) VALUES ($1, $2, $3, $4)',
+          [deviceId, 'switch', expectedState.toString(), 'schedule_correction']
+        );
+        console.log(`📋 Correction command queued for ${deviceId}`);
+      }
+    } else {
+      console.log(`✅ Device ${deviceId} state matches expected schedule`);
+    }
+
+  } catch (error) {
+    console.error(`Error verifying device state for ${deviceId}:`, error);
+  }
+}
 
 // Start HTTP server with WebSocket support
 server.listen(PORT, () => {
