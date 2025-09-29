@@ -1029,21 +1029,20 @@ async function getExpectedDeviceState(deviceId) {
       try {
         let scheduleDays;
         try {
-          // Try parsing as JSON first
-          scheduleDays = JSON.parse(schedule.days);
-          // If it's still a string, parse again (double-escaped JSON)
-          if (typeof scheduleDays === 'string') {
-            scheduleDays = JSON.parse(scheduleDays);
+          // Check if it's already an array (JSONB column)
+          if (Array.isArray(schedule.days)) {
+            scheduleDays = schedule.days;
+          } else {
+            // If it's a string, parse it
+            scheduleDays = JSON.parse(schedule.days);
+            // Handle double-escaped JSON
+            if (typeof scheduleDays === 'string') {
+              scheduleDays = JSON.parse(scheduleDays);
+            }
           }
         } catch (error) {
-          // If JSON parsing fails, try comma-separated string
-          if (typeof schedule.days === 'string' && schedule.days.includes(',')) {
-            scheduleDays = schedule.days.split(',').map(day => day.trim());
-            console.log(`Fixed comma-separated days for schedule ${schedule.id}: ${scheduleDays}`);
-          } else {
-            console.error(`Invalid days format in schedule ${schedule.id}: ${schedule.days}`);
-            continue;
-          }
+          console.error(`Invalid days format in schedule ${schedule.id}: ${schedule.days}`);
+          continue;
         }
         const scheduleDayNumbers = convertDaysToNumbers(scheduleDays);
         
