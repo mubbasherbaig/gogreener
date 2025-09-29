@@ -241,6 +241,8 @@ function getNextScheduleTime(schedules) {
   let nearestTime = Infinity;
   
   for (const schedule of schedules) {
+    if (!schedule.enabled) continue;
+    
     let scheduleDays;
     try {
       if (Array.isArray(schedule.days)) {
@@ -257,13 +259,20 @@ function getNextScheduleTime(schedules) {
         } else {
           scheduleDays = [daysStr];
         }
+      } else {
+        console.error(`Invalid schedule days format for schedule ${schedule.id}`);
+        continue;
       }
     } catch (error) {
-      console.error(`Error parsing schedule ${schedule.id} in timer setup:`, error);
+      console.error(`Skipping schedule ${schedule.id} due to parsing error:`, error.message);
       continue;
     }
     
     const scheduleDayNumbers = convertDaysToNumbers(scheduleDays);
+    if (!scheduleDayNumbers || scheduleDayNumbers.length === 0) {
+      console.error(`Invalid day numbers for schedule ${schedule.id}`);
+      continue;
+    }
     
     // Check if schedule applies today
     if (scheduleDayNumbers.includes(currentDay)) {
