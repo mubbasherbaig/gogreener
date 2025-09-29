@@ -149,6 +149,7 @@ wss.on('connection', (ws, req) => {
         await db.query('UPDATE devices SET is_online = true, last_seen = CURRENT_TIMESTAMP WHERE id = $1', [deviceId]);
         console.log(`Device ${deviceId} connected via WebSocket`);
         broadcastDeviceStatus(deviceId, true);
+        setupScheduleVerification(deviceId);
         
       } else if (message.type === 'user_connect') {
         const { token } = message;
@@ -176,10 +177,7 @@ wss.on('connection', (ws, req) => {
         await db.query('UPDATE devices SET is_online = true, last_seen = CURRENT_TIMESTAMP WHERE id = $1', [deviceId]);
         await db.query('INSERT INTO device_states (device_id, switch_state, current_reading, voltage) VALUES ($1, $2, $3, $4)',
                       [deviceId, switch_state, current_reading || 0, voltage || 0]);
-        
-        // **NEW: Verify and correct device state based on schedules**
-        await verifyAndCorrectDeviceState(deviceId, switch_state);
-        
+                
         // Broadcast device update to users
         broadcastDeviceUpdate(deviceId, { switch_state, current_reading, voltage });
         
@@ -230,40 +228,167 @@ wss.on('connection', (ws, req) => {
   });
 });
 
-// ADD this periodic check after your WebSocket handler
+// Map to store active schedule timers
+const scheduleTimers = new Map();
 
-// Periodic schedule verification for all online devices (runs every 5 minutes)
-setInterval(async () => {
-  try {
-    console.log('🔍 Running periodic schedule verification...');
-    
-    const onlineDevicesResult = await db.query(
-      `SELECT DISTINCT ds.device_id, ds.switch_state 
-       FROM device_states ds
-       INNER JOIN (
-         SELECT device_id, MAX(timestamp) as latest_timestamp
-         FROM device_states 
-         WHERE timestamp >= NOW() - INTERVAL '2 minutes'
-         GROUP BY device_id
-       ) latest ON ds.device_id = latest.device_id AND ds.timestamp = latest.latest_timestamp
-       INNER JOIN devices d ON ds.device_id = d.id AND d.is_online = true`
-    );
-    
-    console.log(`Checking ${onlineDevicesResult.rows.length} online devices...`);
-    
-    for (const device of onlineDevicesResult.rows) {
-      await verifyAndCorrectDeviceState(device.device_id, device.switch_state);
-      // Add small delay to avoid overwhelming the system
-      await new Promise(resolve => setTimeout(resolve, 100));
+// Function to calculate next schedule check time
+function getNextScheduleTime(schedules) {
+  const now = new Date();
+  const currentDay = now.getDay();
+  const currentTimeInMinutes = now.getHours() * 60 + now.getMinutes();
+  
+  let nearestSchedule = null;
+  let nearestTime = Infinity;
+  
+  for (const schedule of schedules) {
+    let scheduleDays;
+    try {
+      if (Array.isArray(schedule.days)) {
+        scheduleDays = schedule.days;
+      } else if (typeof schedule.days === 'string') {
+        const daysStr = schedule.days.trim();
+        if (daysStr.startsWith('[')) {
+          scheduleDays = JSON.parse(daysStr);
+          if (typeof scheduleDays === 'string') {
+            scheduleDays = JSON.parse(scheduleDays);
+          }
+        } else if (daysStr.includes(',')) {
+          scheduleDays = daysStr.split(',').map(day => day.trim());
+        } else {
+          scheduleDays = [daysStr];
+        }
+      }
+    } catch (error) {
+      continue;
     }
     
-    console.log('✅ Periodic schedule verification completed');
-  } catch (error) {
-    console.error('Error in periodic schedule verification:', error);
+    const scheduleDayNumbers = convertDaysToNumbers(scheduleDays);
+    
+    // Check if schedule applies today
+    if (scheduleDayNumbers.includes(currentDay)) {
+      const scheduleTimeInMinutes = schedule.hour * 60 + schedule.minute;
+      const minutesUntilSchedule = scheduleTimeInMinutes - currentTimeInMinutes;
+      
+      // Schedule hasn't happened yet today
+      if (minutesUntilSchedule > 0 && minutesUntilSchedule < nearestTime) {
+        nearestTime = minutesUntilSchedule;
+        nearestSchedule = schedule;
+      }
+    }
+    
+    // Check tomorrow's schedules if no more today
+    const tomorrow = (currentDay + 1) % 7;
+    if (scheduleDayNumbers.includes(tomorrow)) {
+      const scheduleTimeInMinutes = schedule.hour * 60 + schedule.minute;
+      const minutesUntilTomorrow = (24 * 60 - currentTimeInMinutes) + scheduleTimeInMinutes;
+      
+      if (minutesUntilTomorrow < nearestTime) {
+        nearestTime = minutesUntilTomorrow;
+        nearestSchedule = schedule;
+      }
+    }
   }
-}, 5 * 60 * 1000); // Every 5 minutes
+  
+  return { schedule: nearestSchedule, minutesUntil: nearestTime };
+}
 
-// ADD these API endpoints (put them with your other API routes)
+// Function to setup schedule verification for a device
+async function setupScheduleVerification(deviceId) {
+  try {
+    // Get all enabled schedules for this device
+    const result = await db.query(
+      'SELECT * FROM schedules WHERE device_id = $1 AND enabled = true ORDER BY hour, minute',
+      [deviceId]
+    );
+    
+    if (result.rows.length === 0) {
+      console.log(`No schedules for ${deviceId} - verification disabled`);
+      return;
+    }
+    
+    const { schedule, minutesUntil } = getNextScheduleTime(result.rows);
+    
+    if (!schedule) {
+      console.log(`No upcoming schedules for ${deviceId}`);
+      return;
+    }
+    
+    // Clear existing timer if any
+    if (scheduleTimers.has(deviceId)) {
+      clearTimeout(scheduleTimers.get(deviceId));
+    }
+    
+    // Calculate milliseconds until 30 seconds AFTER schedule time
+    const msUntilCheck = (minutesUntil * 60 * 1000) + 30000; // +30 seconds grace period
+    
+    console.log(`Next check for ${deviceId}: ${schedule.name} at ${schedule.hour}:${schedule.minute} (in ${minutesUntil} minutes, will check 30s after)`);
+    
+    // Set timer to check 30 seconds after schedule time
+    const timer = setTimeout(async () => {
+      console.log(`⏰ Checking if schedule ${schedule.name} executed for ${deviceId}`);
+      
+      // Get current device state
+      const stateResult = await db.query(
+        'SELECT switch_state FROM device_states WHERE device_id = $1 ORDER BY timestamp DESC LIMIT 1',
+        [deviceId]
+      );
+      
+      if (stateResult.rows.length > 0) {
+        const actualState = stateResult.rows[0].switch_state;
+        const expectedState = schedule.action === 'turn_on';
+        
+        if (actualState !== expectedState) {
+          console.log(`🔧 Schedule ${schedule.name} was MISSED - correcting now`);
+          
+          // Send correction
+          const correctionCommand = {
+            type: 'command',
+            command_type: 'switch',
+            command_value: expectedState.toString(),
+            reason: 'schedule_missed'
+          };
+          
+          const sent = sendCommandToDevice(deviceId, correctionCommand);
+          
+          if (sent) {
+            console.log(`✅ Correction sent for missed schedule`);
+            await db.query(
+              `INSERT INTO device_corrections (device_id, expected_state, actual_state, schedule_id, schedule_name) 
+               VALUES ($1, $2, $3, $4, $5)`,
+              [deviceId, expectedState, actualState, schedule.id, schedule.name]
+            );
+          }
+        } else {
+          console.log(`✅ Schedule ${schedule.name} executed correctly by device`);
+        }
+      }
+      
+      // Setup next schedule check
+      setupScheduleVerification(deviceId);
+      
+    }, msUntilCheck);
+    
+    scheduleTimers.set(deviceId, timer);
+    
+  } catch (error) {
+    console.error(`Error setting up verification for ${deviceId}:`, error);
+  }
+}
+
+// Initialize schedule verification for all devices on server start
+async function initializeAllScheduleVerifications() {
+  try {
+    const result = await db.query('SELECT DISTINCT device_id FROM schedules WHERE enabled = true');
+    
+    for (const row of result.rows) {
+      await setupScheduleVerification(row.device_id);
+    }
+    
+    console.log(`✅ Schedule verification initialized for ${result.rows.length} devices`);
+  } catch (error) {
+    console.error('Error initializing schedule verifications:', error);
+  }
+}
 
 // API endpoint to manually trigger schedule verification for a device
 app.post('/api/devices/:deviceId/verify-schedule', authenticateToken, async (req, res) => {
@@ -849,6 +974,7 @@ app.delete('/api/devices/:deviceId/schedules/:scheduleId', authenticateToken, as
     res.status(500).json({ error: 'Database error' });
   }
 });
+setupScheduleVerification(deviceId);
 
 // SYNC all schedules to device
 app.post('/api/devices/:deviceId/schedules/sync', authenticateToken, async (req, res) => {
