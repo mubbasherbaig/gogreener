@@ -1137,16 +1137,16 @@ async function verifyAndCorrectDeviceState(deviceId, actualSwitchState) {
     if (expectedState !== actualSwitchState) {
       console.log(`🔧 SCHEDULE MISMATCH DETECTED for ${deviceId}!`);
       console.log(`Expected: ${expectedState ? 'ON' : 'OFF'}, Actual: ${actualSwitchState ? 'ON' : 'OFF'}`);
-      console.log(`Triggering Schedule: ${triggeringSchedule.name} (${triggeringSchedule.action})`);
-      
+      console.log(`Triggering Schedule: ${triggeringSchedule?.name || 'Unknown'} (${triggeringSchedule?.action || 'Unknown'})`);
+
       // Send correction command to device
       const correctionCommand = {
         type: 'command',
         command_type: 'switch',
         command_value: expectedState.toString(),
         reason: 'schedule_correction',
-        schedule_id: triggeringSchedule.id,
-        schedule_name: triggeringSchedule.name
+        schedule_id: triggeringSchedule?.id || null,
+        schedule_name: triggeringSchedule?.name || 'Unknown'
       };
 
       const sent = sendCommandToDevice(deviceId, correctionCommand);
