@@ -1029,16 +1029,24 @@ async function getExpectedDeviceState(deviceId) {
       try {
         let scheduleDays;
         try {
-          // Check if it's already an array (JSONB column)
+          // Check if it's already an array (JSONB column returns parsed data)
           if (Array.isArray(schedule.days)) {
             scheduleDays = schedule.days;
-          } else {
-            // If it's a string, parse it
-            scheduleDays = JSON.parse(schedule.days);
-            // Handle double-escaped JSON
-            if (typeof scheduleDays === 'string') {
-              scheduleDays = JSON.parse(scheduleDays);
+          } else if (typeof schedule.days === 'string') {
+            // Handle comma-separated strings (like "monday,tuesday,wednesday")
+            if (schedule.days.includes(',') && !schedule.days.startsWith('[')) {
+              scheduleDays = schedule.days.split(',').map(day => day.trim());
+              console.log(`Fixed comma-separated format for schedule ${schedule.id}`);
+            } else {
+              // Handle JSON strings
+              scheduleDays = JSON.parse(schedule.days);
+              // Handle double-escaped JSON
+              if (typeof scheduleDays === 'string') {
+                scheduleDays = JSON.parse(scheduleDays);
+              }
             }
+          } else {
+            throw new Error(`Unexpected data type: ${typeof schedule.days}`);
           }
         } catch (error) {
           console.error(`Invalid days format in schedule ${schedule.id}: ${schedule.days}`);
