@@ -925,7 +925,7 @@ app.put('/api/devices/:deviceId/schedules/:scheduleId', authenticateToken, async
     };
 
     const sent = sendCommandToDevice(deviceId, scheduleCommand);
-
+    setupScheduleVerification(deviceId);
     res.json({ 
       ...updatedSchedule, 
       days: parsedDays,
@@ -957,7 +957,7 @@ app.delete('/api/devices/:deviceId/schedules/:scheduleId', authenticateToken, as
 
     // Delete from database
     await db.query('DELETE FROM schedules WHERE id = $1 AND device_id = $2', [scheduleId, deviceId]);
-
+    setupScheduleVerification(deviceId);
     // Send delete command to device if it's online
     const deleteCommand = {
       type: 'command',
@@ -976,7 +976,6 @@ app.delete('/api/devices/:deviceId/schedules/:scheduleId', authenticateToken, as
     res.status(500).json({ error: 'Database error' });
   }
 });
-setupScheduleVerification(deviceId);
 
 // SYNC all schedules to device
 app.post('/api/devices/:deviceId/schedules/sync', authenticateToken, async (req, res) => {
