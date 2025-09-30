@@ -1027,6 +1027,53 @@ app.delete('/api/devices/:deviceId/schedules/:scheduleId', authenticateToken, as
   }
 });
 
+app.get('/api/devices/:deviceId/next-schedule', async (req, res) => {
+  const { deviceId } = req.params;
+  try {
+    const result = await db.query(
+      'SELECT * FROM schedules WHERE device_id = $1 AND enabled = true ORDER BY hour, minute',
+      [deviceId]
+    );
+    
+    const { schedule, minutesUntil } = getNextScheduleTime(result.rows);
+    
+    if (!schedule || minutesUntil === Infinity) {
+      return res.json({ message: 'No upcoming schedules' });
+    }
+    
+    const now = DateTime.now().setZone('Asia/Karachi');
+    const currentDay = now.weekday % 7;
+    const daysUntil = Math.floor(minutesUntil / (24 * 60));
+    let displayDay = 'Today';
+    
+    if (daysUntil === 1) {
+      displayDay = 'Tomorrow';
+    } else if (daysUntil > 1) {
+      const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+      displayDay = dayNames[schedule.targetDay];
+    }
+    
+    const scheduleTime = DateTime.fromObject(
+      { hour: schedule.hour, minute: schedule.minute },
+      { zone: 'Asia/Karachi' }
+    ).toFormat('h:mm a');
+    
+    const actionText = schedule.action === 'turn_on' ? 'turn on' : 'turn off';
+    
+    res.json({
+      scheduleId: schedule.id,
+      name: schedule.name,
+      time: scheduleTime,
+      action: actionText,
+      displayDay,
+      minutesUntil
+    });
+  } catch (error) {
+    console.error(`Error fetching next schedule for ${deviceId}:`, error);
+    res.status(500).json({ error: 'Failed to fetch next schedule' });
+  }
+});
+
 app.post('/api/devices/:deviceId/heartbeat', async (req, res) => {
   const { deviceId } = req.params;
   const { switch_state } = req.body;

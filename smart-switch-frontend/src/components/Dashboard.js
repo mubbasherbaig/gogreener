@@ -3,8 +3,7 @@ import DeviceCard from './DeviceCard';
 import AddDevice from './AddDevice';
 import DeviceChart from './DeviceChart';
 import ScheduleModal from './ScheduleModal';
-import { WS_BASE_URL } from '../config';
-import { API_BASE_URL } from '../config';
+import { WS_BASE_URL, API_BASE_URL } from '../config';
 
 const Dashboard = () => {
   const [devices, setDevices] = useState([]);
@@ -38,7 +37,6 @@ const Dashboard = () => {
       console.log('WebSocket connected');
       setConnected(true);
       
-      // Send user authentication
       ws.send(JSON.stringify({
         type: 'user_connect',
         token: token
@@ -49,7 +47,6 @@ const Dashboard = () => {
       const message = JSON.parse(event.data);
       
       if (message.type === 'device_status') {
-        // Update device online status
         setDevices(prev =>
           prev.map(device =>
             device.id === message.deviceId
@@ -70,6 +67,9 @@ const Dashboard = () => {
               : device
           )
         );
+      } else if (message.type === 'schedule_update') {
+        // Trigger refetch of devices to update next schedule
+        fetchDevices();
       }
     };
 
@@ -77,7 +77,6 @@ const Dashboard = () => {
       console.log('WebSocket disconnected');
       setConnected(false);
       
-      // Reconnect after 3 seconds
       setTimeout(connectWebSocket, 3000);
     };
 
@@ -110,7 +109,6 @@ const Dashboard = () => {
   };
 
   const controlDevice = async (deviceId, action, value) => {
-    // Optimistic update - show change immediately
     setDevices(prev => prev.map(device => 
       device.id === deviceId 
         ? { ...device, switch_state: action === 'switch' ? value : device.switch_state }
@@ -133,7 +131,7 @@ const Dashboard = () => {
       
     } catch (error) {
       console.error('Error controlling device:', error);
-      fetchDevices(); // Revert on error
+      fetchDevices();
     }
   };
 
@@ -166,8 +164,37 @@ const Dashboard = () => {
     setScheduleDevice(null);
   };
 
-  const handleSaveSchedule = (scheduleData) => {
-    console.log('Schedule saved:', scheduleData);
+  const handleSaveSchedule = async (deviceId, scheduleData) => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_BASE_URL}/api/devices/${deviceId}/schedules`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(scheduleData)
+      });
+      
+      if (response.ok) {
+        console.log('Schedule saved:', scheduleData);
+        // Notify WebSocket clients of schedule update
+        wss.clients.forEach(client => {
+          if (client.readyState === WebSocket.OPEN) {
+            client.send(JSON.stringify({
+              type: 'schedule_update',
+              deviceId
+            }));
+          }
+        });
+        fetchDevices(); // Refresh devices to update next schedule
+      } else {
+        alert('Failed to save schedule');
+      }
+    } catch (error) {
+      console.error('Error saving schedule:', error);
+      alert('Error saving schedule');
+    }
   };
 
   if (loading) {

@@ -1,9 +1,36 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import { API_BASE_URL } from '../config';
 
 const DeviceCard = ({ device, onControl, onViewChart, onDelete, onSchedules }) => {
   const isOnline = device.is_online;
   const switchState = device.switch_state;
   const currentReading = parseFloat(device.current_reading) || 0;
+  const [nextSchedule, setNextSchedule] = useState(null);
+
+  useEffect(() => {
+    fetchNextSchedule();
+  }, [device.id]);
+
+  const fetchNextSchedule = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_BASE_URL}/api/devices/${device.id}/next-schedule`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setNextSchedule(data.message ? null : data);
+      } else {
+        setNextSchedule(null);
+      }
+    } catch (error) {
+      console.error(`Error fetching next schedule for ${device.id}:`, error);
+      setNextSchedule(null);
+    }
+  };
 
   const handleToggle = () => {
     onControl(device.id, 'switch', !switchState);
@@ -38,6 +65,11 @@ const DeviceCard = ({ device, onControl, onViewChart, onDelete, onSchedules }) =
         <p><strong>Device ID:</strong> {device.id}</p>
         <p><strong>Current:</strong> {currentReading.toFixed(2)} A</p>
         <p><strong>Last Seen:</strong> {device.last_seen ? new Date(device.last_seen).toLocaleTimeString() : 'Never'}</p>
+        {nextSchedule ? (
+          <p><strong>Next Schedule:</strong> The device will {nextSchedule.action} {nextSchedule.displayDay.toLowerCase()} at {nextSchedule.time}</p>
+        ) : (
+          <p><strong>Next Schedule:</strong> No upcoming schedules</p>
+        )}
       </div>
 
       <div className="device-controls">

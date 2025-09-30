@@ -1595,3 +1595,17 @@ input:checked + .toggle-slider:before {
     width: 100%;
   }
 }
+.device-card .device-info p {
+  margin: 0.5rem 0;
+  font-size: 0.9rem;
+  color: #4a5568; /* Tailwind gray-700 */
+}
+
+.device-card .device-info p strong {
+  font-weight: 600;
+}
+
+.device-card .device-info p:last-child {
+  font-style: italic;
+  color: #2d3748; /* Tailwind gray-800 */
+}
