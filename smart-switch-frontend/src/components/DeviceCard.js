@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { WS_BASE_URL } from '../config';
+import { API_BASE_URL } from '../config';
 
 const DeviceCard = ({ device, onControl, onViewChart, onDelete, onSchedules }) => {
   const isOnline = device.is_online;
