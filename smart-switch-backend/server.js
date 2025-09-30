@@ -232,9 +232,6 @@ wss.on('connection', (ws, req) => {
   });
 });
 
-// Map to store active schedule timers
-const scheduleTimers = new Map();
-
 const { DateTime } = require('luxon');
 
 function getNextScheduleTime(schedules) {
@@ -275,23 +272,27 @@ function getNextScheduleTime(schedules) {
       if (day === currentDay) {
         // Same day: check if schedule is still in the future today
         minutesUntilSchedule = scheduleTimeInMinutes - currentTimeInMinutes;
-        if (minutesUntilSchedule <= 0) {
+        // Allow a 1-minute buffer to avoid missing schedules just past the current time
+        if (minutesUntilSchedule > -1) {
+          // Schedule is today and hasn't passed (or is very recent)
+        } else {
           // Schedule has passed today; check next occurrence
-          const nextOccurrence = scheduleDays.map(d => convertDaysToNumbers([d])[0]).sort((a, b) => {
-            const daysUntilA = (a < currentDay) ? (7 - currentDay + a) : (a - currentDay);
-            const daysUntilB = (b < currentDay) ? (7 - currentDay + b) : (b - currentDay);
+          const nextOccurrence = scheduleDayNumbers.sort((a, b) => {
+            const daysUntilA = (a <= currentDay) ? (7 - currentDay + a) : (a - currentDay);
+            const daysUntilB = (b <= currentDay) ? (7 - currentDay + b) : (b - currentDay);
             return daysUntilA - daysUntilB;
           })[0];
-          const daysUntil = (nextOccurrence < currentDay) ? (7 - currentDay + nextOccurrence) : (nextOccurrence - currentDay);
+          const daysUntil = (nextOccurrence <= currentDay) ? (7 - currentDay + nextOccurrence) : (nextOccurrence - currentDay);
           minutesUntilSchedule = (daysUntil * 24 * 60) + (scheduleTimeInMinutes - currentTimeInMinutes);
         }
       } else {
         // Different day: calculate days until next occurrence
-        const daysUntil = (day < currentDay) ? (7 - currentDay + day) : (day - currentDay);
+        const daysUntil = (day <= currentDay) ? (7 - currentDay + day) : (day - currentDay);
         minutesUntilSchedule = (daysUntil * 24 * 60) + (scheduleTimeInMinutes - currentTimeInMinutes);
       }
       
-      if (minutesUntilSchedule < nearestTime) {
+      // Only update if this schedule is closer
+      if (minutesUntilSchedule < nearestTime && minutesUntilSchedule > -1) {
         nearestTime = minutesUntilSchedule;
         nearestSchedule = schedule;
       }
@@ -302,8 +303,23 @@ function getNextScheduleTime(schedules) {
   return { schedule: nearestSchedule, minutesUntil: nearestTime };
 }
 
-// Function to setup schedule verification for a device
+const { DateTime } = require('luxon');
+
+// Map to store timers
+const scheduleTimers = new Map();
+// Debounce tracking to prevent rapid recursive calls
+const verificationDebounce = new Map();
+
 async function setupScheduleVerification(deviceId) {
+  // Debounce: skip if called within 1 second for this device
+  const lastCall = verificationDebounce.get(deviceId) || 0;
+  const now = Date.now();
+  if (now - lastCall < 1000) {
+    console.log(`Debouncing setupScheduleVerification for ${deviceId}`);
+    return;
+  }
+  verificationDebounce.set(deviceId, now);
+
   try {
     const result = await db.query(
       'SELECT * FROM schedules WHERE device_id = $1 AND enabled = true ORDER BY hour, minute',
@@ -330,9 +346,11 @@ async function setupScheduleVerification(deviceId) {
       return;
     }
     
+    // Clear any existing timer
     if (scheduleTimers.has(deviceId)) {
       console.log(`Clearing existing timer for ${deviceId}`);
       clearTimeout(scheduleTimers.get(deviceId));
+      scheduleTimers.delete(deviceId);
     }
     
     const msUntilCheck = (minutesUntil * 60 * 1000) + 30000; // Schedule time + 30 seconds
@@ -340,7 +358,8 @@ async function setupScheduleVerification(deviceId) {
     console.log(`⏰ Setting up check for ${deviceId}: "${schedule.name}" (ID: ${schedule.id}) at ${schedule.hour}:${String(schedule.minute).padStart(2,'0')} (in ${minutesUntil} min)`);
     
     const timer = setTimeout(async () => {
-      console.log(`\n⏰ TIMER FIRED for ${deviceId} - Checking schedule "${schedule.name}" (ID: ${schedule.id}) at ${new Date().toISOString()}`);
+      const pktTime = DateTime.now().setZone('Asia/Karachi');
+      console.log(`\n⏰ TIMER FIRED for ${deviceId} - Checking schedule "${schedule.name}" (ID: ${schedule.id}) at ${pktTime.toISO()}`);
       
       try {
         const stateResult = await db.query(
@@ -392,7 +411,8 @@ async function setupScheduleVerification(deviceId) {
         console.error(`Error checking schedule for ${deviceId}:`, error);
       }
       
-      // Set up next schedule check
+      // Clear timer and set up next check
+      scheduleTimers.delete(deviceId);
       console.log(`Setting up NEXT schedule check for ${deviceId}...`);
       setupScheduleVerification(deviceId);
       
@@ -1006,6 +1026,29 @@ app.delete('/api/devices/:deviceId/schedules/:scheduleId', authenticateToken, as
   } catch (error) {
     console.error('Error deleting schedule:', error);
     res.status(500).json({ error: 'Database error' });
+  }
+});
+
+app.post('/api/devices/:deviceId/heartbeat', async (req, res) => {
+  const { deviceId } = req.params;
+  const { switch_state } = req.body;
+
+  try {
+    const pktTime = DateTime.now().setZone('Asia/Karachi');
+    console.log(`Heartbeat received for ${deviceId} at ${pktTime.toISO()}: switch_state = ${switch_state}`);
+    
+    await db.query(
+      'INSERT INTO device_states (device_id, switch_state, timestamp) VALUES ($1, $2, $3)',
+      [deviceId, switch_state, pktTime.toJSDate()]
+    );
+    
+    // Trigger schedule verification to catch any missed schedules
+    setupScheduleVerification(deviceId);
+    
+    res.json({ status: 'success' });
+  } catch (error) {
+    console.error(`Error processing heartbeat for ${deviceId}:`, error);
+    res.status(500).json({ error: 'Failed to process heartbeat' });
   }
 });
 
