@@ -259,30 +259,32 @@ function getNextScheduleTime(schedules) {
       continue;
     }
     
-    // Check if schedule applies today
-    if (scheduleDayNumbers.includes(currentDay)) {
+    // Check all days in the schedule
+    scheduleDayNumbers.forEach(day => {
+      let minutesUntilSchedule;
       const scheduleTimeInMinutes = schedule.hour * 60 + schedule.minute;
-      const minutesUntilSchedule = scheduleTimeInMinutes - currentTimeInMinutes;
       
-      if (minutesUntilSchedule > 0 && minutesUntilSchedule < nearestTime) {
+      if (day === currentDay) {
+        // Same day: check if schedule is in the future
+        minutesUntilSchedule = scheduleTimeInMinutes - currentTimeInMinutes;
+        if (minutesUntilSchedule <= 0) {
+          // Schedule has passed today; check next occurrence
+          minutesUntilSchedule += 7 * 24 * 60; // Next week
+        }
+      } else {
+        // Different day: calculate days until next occurrence
+        const daysUntil = (day < currentDay) ? (7 - currentDay + day) : (day - currentDay);
+        minutesUntilSchedule = (daysUntil * 24 * 60) + (scheduleTimeInMinutes - currentTimeInMinutes);
+      }
+      
+      if (minutesUntilSchedule < nearestTime) {
         nearestTime = minutesUntilSchedule;
         nearestSchedule = schedule;
       }
-    }
-    
-    // Check tomorrow's schedules if no more today
-    const tomorrow = (currentDay + 1) % 7;
-    if (scheduleDayNumbers.includes(tomorrow)) {
-      const scheduleTimeInMinutes = schedule.hour * 60 + schedule.minute;
-      const minutesUntilTomorrow = (24 * 60 - currentTimeInMinutes) + scheduleTimeInMinutes;
-      
-      if (minutesUntilTomorrow < nearestTime) {
-        nearestTime = minutesUntilTomorrow;
-        nearestSchedule = schedule;
-      }
-    }
+    });
   }
   
+  console.log(`getNextScheduleTime: Selected schedule ${nearestSchedule?.id || 'none'} "${nearestSchedule?.name || 'none'}" in ${nearestTime} min`);
   return { schedule: nearestSchedule, minutesUntil: nearestTime };
 }
 
@@ -294,7 +296,13 @@ async function setupScheduleVerification(deviceId) {
       [deviceId]
     );
     
-    console.log(`Found ${result.rows.length} schedules for ${deviceId}:`, result.rows.map(s => ({ id: s.id, name: s.name, days: s.days })));
+    console.log(`Found ${result.rows.length} schedules for ${deviceId}:`, result.rows.map(s => ({
+      id: s.id,
+      name: s.name,
+      time: `${s.hour}:${String(s.minute).padStart(2,'0')}`,
+      days: s.days,
+      action: s.action
+    })));
     
     if (result.rows.length === 0) {
       console.log(`No schedules for ${deviceId}`);
@@ -309,15 +317,16 @@ async function setupScheduleVerification(deviceId) {
     }
     
     if (scheduleTimers.has(deviceId)) {
+      console.log(`Clearing existing timer for ${deviceId}`);
       clearTimeout(scheduleTimers.get(deviceId));
     }
     
-    const msUntilCheck = (minutesUntil * 60 * 1000) + 30000;  // Schedule time + 30 seconds
+    const msUntilCheck = (minutesUntil * 60 * 1000) + 30000; // Schedule time + 30 seconds
     
     console.log(`⏰ Setting up check for ${deviceId}: "${schedule.name}" (ID: ${schedule.id}) at ${schedule.hour}:${String(schedule.minute).padStart(2,'0')} (in ${minutesUntil} min)`);
     
     const timer = setTimeout(async () => {
-      console.log(`⏰ TIMER FIRED for ${deviceId} - Checking schedule "${schedule.name}" (ID: ${schedule.id}) at ${new Date().toISOString()}`);
+      console.log(`\n⏰ TIMER FIRED for ${deviceId} - Checking schedule "${schedule.name}" (ID: ${schedule.id}) at ${new Date().toISOString()}`);
       
       try {
         const stateResult = await db.query(
@@ -369,7 +378,7 @@ async function setupScheduleVerification(deviceId) {
         console.error(`Error checking schedule for ${deviceId}:`, error);
       }
       
-      // Set up next schedule check
+      // Always set up the next schedule check
       console.log(`Setting up NEXT schedule check for ${deviceId}...`);
       setupScheduleVerification(deviceId);
       
@@ -788,7 +797,7 @@ app.post('/api/devices/:deviceId/schedules', authenticateToken, async (req, res)
     // Validate day names
     const validDays = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
     if (!daysArray.every(day => validDays.includes(day.toLowerCase()))) {
-      return res.status(400).json({ error: 'Invalid day names. Must be one of: ' + validDays.join(', ') });
+      return res.status(400).json({ error: 'Invalid day names' });
     }
 
     console.log('Processed days array:', daysArray);
@@ -798,7 +807,7 @@ app.post('/api/devices/:deviceId/schedules', authenticateToken, async (req, res)
       return res.status(400).json({ error: 'Action must be turn_on or turn_off' });
     }
 
-    // Insert schedule into database (stringify daysArray for jsonb)
+    // Insert schedule into database
     const result = await db.query(
       `INSERT INTO schedules 
        (device_id, name, hour, minute, action, days, enabled, repeat_type) 
@@ -830,7 +839,7 @@ app.post('/api/devices/:deviceId/schedules', authenticateToken, async (req, res)
 
       const sent = sendCommandToDevice(deviceId, scheduleCommand);
       console.log('Device command sent:', sent);
-      setupScheduleVerification(deviceId);
+      setupScheduleVerification(deviceId); // Ensure this uses updated function
       res.json({ 
         ...newSchedule, 
         days: parsedDays,
