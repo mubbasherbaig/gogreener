@@ -164,6 +164,12 @@ const Dashboard = () => {
   };
 
   const handleSaveSchedule = async (deviceId, scheduleData) => {
+    console.log('handleSaveSchedule called with deviceId:', deviceId, 'scheduleData:', scheduleData);
+    if (!deviceId) {
+      console.error('Device ID is undefined in handleSaveSchedule');
+      alert('Error: Device ID is missing');
+      return;
+    }
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(`${API_BASE_URL}/api/devices/${deviceId}/schedules`, {
