@@ -1,15 +1,53 @@
-import React, { useState, useEffect } from 'react';
-import { API_BASE_URL } from '../config';
+import React, { useState, useEffect, useRef } from 'react';
+import { WS_BASE_URL } from '../config';
 
 const DeviceCard = ({ device, onControl, onViewChart, onDelete, onSchedules }) => {
   const isOnline = device.is_online;
   const switchState = device.switch_state;
   const currentReading = parseFloat(device.current_reading) || 0;
   const [nextSchedule, setNextSchedule] = useState(null);
+  const wsRef = useRef(null);
 
   useEffect(() => {
     fetchNextSchedule();
+    connectWebSocket();
+
+    return () => {
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
+    };
   }, [device.id]);
+
+  const connectWebSocket = () => {
+    const token = localStorage.getItem('token');
+    if (!token || wsRef.current) return;
+
+    const wsUrl = `${WS_BASE_URL}/?token=${token}`;
+    const ws = new WebSocket(wsUrl);
+    wsRef.current = ws;
+
+    ws.onopen = () => {
+      console.log('DeviceCard WebSocket connected for device:', device.id);
+      ws.send(JSON.stringify({ type: 'user_connect', token }));
+    };
+
+    ws.onmessage = (event) => {
+      const message = JSON.parse(event.data);
+      if (message.type === 'schedule_update' && message.deviceId === device.id) {
+        console.log('Schedule updated, refetching next schedule for:', device.id);
+        fetchNextSchedule();
+      }
+    };
+
+    ws.onclose = () => {
+      console.log('DeviceCard WebSocket disconnected for device:', device.id);
+    };
+
+    ws.onerror = (error) => {
+      console.error('DeviceCard WebSocket error:', error);
+    };
+  };
 
   const fetchNextSchedule = async () => {
     try {
@@ -25,6 +63,7 @@ const DeviceCard = ({ device, onControl, onViewChart, onDelete, onSchedules }) =
         setNextSchedule(data.message ? null : data);
       } else {
         setNextSchedule(null);
+        console.error('Failed to fetch next schedule:', await response.json());
       }
     } catch (error) {
       console.error(`Error fetching next schedule for ${device.id}:`, error);
@@ -66,7 +105,7 @@ const DeviceCard = ({ device, onControl, onViewChart, onDelete, onSchedules }) =
         <p><strong>Current:</strong> {currentReading.toFixed(2)} A</p>
         <p><strong>Last Seen:</strong> {device.last_seen ? new Date(device.last_seen).toLocaleTimeString() : 'Never'}</p>
         {nextSchedule ? (
-          <p><strong>Next Schedule:</strong> The device will {nextSchedule.action} {nextSchedule.displayDay.toLowerCase()} at {nextSchedule.time}</p>
+          <p><strong>Next Schedule:</strong> The device will {nextSchedule.action} {nextSchedule.displayDay ? nextSchedule.displayDay.toLowerCase() : 'unknown day'} at {nextSchedule.time}</p>
         ) : (
           <p><strong>Next Schedule:</strong> No upcoming schedules</p>
         )}

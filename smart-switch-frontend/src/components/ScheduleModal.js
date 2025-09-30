@@ -138,6 +138,7 @@ const ScheduleModal = ({ device, onClose, onSave }) => {
             return updated;
           });
           console.log('Schedule created successfully');
+          fetchSchedules();
         } else {
           const errorData = await response.json();
           throw new Error(errorData.error || 'Failed to create schedule');
