@@ -43,7 +43,6 @@ const ScheduleModal = ({ device, onClose, onSave }) => {
 
       if (response.ok) {
         const data = await response.json();
-        // Convert database format to frontend format
         const formattedSchedules = data.map(schedule => ({
           ...schedule,
           time: `${schedule.hour.toString().padStart(2, '0')}:${schedule.minute.toString().padStart(2, '0')}`,
@@ -99,7 +98,6 @@ const ScheduleModal = ({ device, onClose, onSave }) => {
       };
 
       if (editingSchedule) {
-        // Update existing schedule
         const response = await fetch(`${API_BASE_URL}/api/devices/${device.id}/schedules/${editingSchedule.id}`, {
           method: 'PUT',
           headers: {
@@ -111,7 +109,6 @@ const ScheduleModal = ({ device, onClose, onSave }) => {
 
         if (response.ok) {
           const updatedSchedule = await response.json();
-          // Update local state
           setSchedules(prev => prev.map(s => 
             s.id === editingSchedule.id 
               ? { ...updatedSchedule, time: newSchedule.time, days: newSchedule.days }
@@ -123,7 +120,6 @@ const ScheduleModal = ({ device, onClose, onSave }) => {
           throw new Error(errorData.error || 'Failed to update schedule');
         }
       } else {
-        // Create new schedule
         const response = await fetch(`${API_BASE_URL}/api/devices/${device.id}/schedules`, {
           method: 'POST',
           headers: {
@@ -135,7 +131,6 @@ const ScheduleModal = ({ device, onClose, onSave }) => {
 
         if (response.ok) {
           const newScheduleData = await response.json();
-          // Add to local state
           setSchedules(prev => [...prev, { 
             ...newScheduleData, 
             time: newSchedule.time, 
@@ -160,8 +155,9 @@ const ScheduleModal = ({ device, onClose, onSave }) => {
       setShowAddForm(false);
       setEditingSchedule(null);
 
+      // Call onSave with device.id and scheduleData
       if (onSave) {
-        onSave();
+        onSave(device.id, scheduleData);
       }
 
     } catch (error) {
@@ -201,7 +197,6 @@ const ScheduleModal = ({ device, onClose, onSave }) => {
       });
 
       if (response.ok) {
-        // Remove from local state
         setSchedules(prev => prev.filter(s => s.id !== scheduleId));
         console.log('Schedule deleted successfully');
       } else {
@@ -239,7 +234,6 @@ const ScheduleModal = ({ device, onClose, onSave }) => {
       });
 
       if (response.ok) {
-        // Update local state
         setSchedules(prev => prev.map(s => 
           s.id === scheduleId ? { ...s, enabled: !s.enabled } : s
         ));
@@ -294,7 +288,6 @@ const ScheduleModal = ({ device, onClose, onSave }) => {
         )}
 
         <div className="schedule-content">
-          {/* Existing Schedules */}
           <div className="schedules-section">
             <div className="section-header">
               <h4>Current Schedules</h4>
@@ -369,7 +362,6 @@ const ScheduleModal = ({ device, onClose, onSave }) => {
             )}
           </div>
 
-          {/* Add/Edit Form */}
           {showAddForm && (
             <div className="add-schedule-section">
               <h4>{editingSchedule ? 'Edit Schedule' : 'Add New Schedule'}</h4>
