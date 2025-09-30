@@ -244,24 +244,13 @@ function getNextScheduleTime(schedules) {
     if (!schedule.enabled) continue;
     
     let scheduleDays = schedule.days;
-    if (typeof scheduleDays === 'string') {
-      const daysStr = scheduleDays.trim();
-      try {
-        if (daysStr.startsWith('[')) {
-          scheduleDays = JSON.parse(daysStr);
-        } else if (daysStr.includes(',')) {
-          scheduleDays = daysStr.split(',').map(day => day.trim());
-        } else {
-          scheduleDays = [daysStr];
-        }
-      } catch (error) {
-        console.error(`Error parsing days for schedule ${schedule.id}: ${error.message}. Days string: "${daysStr}"`);
-        scheduleDays = daysStr.split(',').map(day => day.trim());
-      }
-    }
-    if (!Array.isArray(scheduleDays) || scheduleDays.length === 0) {
+    if (!Array.isArray(scheduleDays)) {
       console.error(`Invalid days for schedule ${schedule.id}: ${schedule.days}`);
-      continue;
+      if (typeof scheduleDays === 'string') {
+        scheduleDays = scheduleDays.split(',').map(day => day.trim());
+      } else {
+        continue;
+      }
     }
     
     const scheduleDayNumbers = convertDaysToNumbers(scheduleDays);
@@ -305,6 +294,8 @@ async function setupScheduleVerification(deviceId) {
       [deviceId]
     );
     
+    console.log(`Found ${result.rows.length} schedules for ${deviceId}:`, result.rows.map(s => ({ id: s.id, name: s.name, days: s.days })));
+    
     if (result.rows.length === 0) {
       console.log(`No schedules for ${deviceId}`);
       return;
@@ -323,42 +314,53 @@ async function setupScheduleVerification(deviceId) {
     
     const msUntilCheck = (minutesUntil * 60 * 1000) + 30000;  // Schedule time + 30 seconds
     
-    console.log(`⏰ Next check for ${deviceId}: "${schedule.name}" at ${schedule.hour}:${String(schedule.minute).padStart(2,'0')} (in ${minutesUntil} min)`);
+    console.log(`⏰ Setting up check for ${deviceId}: "${schedule.name}" (ID: ${schedule.id}) at ${schedule.hour}:${String(schedule.minute).padStart(2,'0')} (in ${minutesUntil} min)`);
     
     const timer = setTimeout(async () => {
-      console.log(`\n⏰ TIMER FIRED for ${deviceId} - Checking schedule "${schedule.name}" at ${new Date().toISOString()}`);
+      console.log(`⏰ TIMER FIRED for ${deviceId} - Checking schedule "${schedule.name}" (ID: ${schedule.id}) at ${new Date().toISOString()}`);
       
       try {
         const stateResult = await db.query(
-          'SELECT switch_state FROM device_states WHERE device_id = $1 ORDER BY timestamp DESC LIMIT 1',
+          'SELECT switch_state, timestamp FROM device_states WHERE device_id = $1 ORDER BY timestamp DESC LIMIT 1',
           [deviceId]
         );
         
         if (stateResult.rows.length > 0) {
-          const actualState = stateResult.rows[0].switch_state;
+          const { switch_state, timestamp } = stateResult.rows[0];
           const expectedState = schedule.action === 'turn_on';
           
-          console.log(`State check: Actual = ${actualState}, Expected = ${expectedState} for schedule ${schedule.id}`);
+          console.log(`State check for ${deviceId}: Actual = ${switch_state}, Expected = ${expectedState}, Last updated = ${timestamp}`);
           
-          if (actualState !== expectedState) {
+          if (switch_state !== expectedState) {
             console.log(`🔧 MISSED SCHEDULE - Correcting ${deviceId} to ${expectedState ? 'ON' : 'OFF'}`);
             
             const correctionCommand = {
               type: 'command',
               command_type: 'switch',
-              command_value: expectedState.toString()
+              command_value: expectedState.toString(),
+              schedule_id: schedule.id,
+              schedule_name: schedule.name
             };
             
             const sent = sendCommandToDevice(deviceId, correctionCommand);
-            console.log(`Correction command sent: ${sent}`);
+            console.log(`Correction command sent to ${deviceId}: ${sent ? 'Success' : 'Failed (device offline)'}`);
             
-            await db.query(
-              `INSERT INTO device_corrections (device_id, expected_state, actual_state, schedule_id, schedule_name) 
-               VALUES ($1, $2, $3, $4, $5)`,
-              [deviceId, expectedState, actualState, schedule.id, schedule.name]
-            );
+            if (sent) {
+              await db.query(
+                `INSERT INTO device_corrections (device_id, expected_state, actual_state, schedule_id, schedule_name) 
+                 VALUES ($1, $2, $3, $4, $5)`,
+                [deviceId, expectedState, switch_state, schedule.id, schedule.name]
+              );
+              console.log(`Correction logged for ${deviceId}`);
+            } else {
+              console.log(`Queueing correction command for offline ${deviceId}`);
+              await db.query(
+                'INSERT INTO commands (device_id, command_type, command_value, reason) VALUES ($1, $2, $3, $4)',
+                [deviceId, 'switch', expectedState.toString(), `schedule_correction_${schedule.id}`]
+              );
+            }
           } else {
-            console.log(`✅ Schedule "${schedule.name}" executed correctly (no correction needed)`);
+            console.log(`✅ Schedule "${schedule.name}" (ID: ${schedule.id}) executed correctly (no correction needed)`);
           }
         } else {
           console.log(`⚠️ No state found for ${deviceId} - Cannot verify schedule`);
@@ -786,7 +788,7 @@ app.post('/api/devices/:deviceId/schedules', authenticateToken, async (req, res)
     // Validate day names
     const validDays = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
     if (!daysArray.every(day => validDays.includes(day.toLowerCase()))) {
-      return res.status(400).json({ error: 'Invalid day names' });
+      return res.status(400).json({ error: 'Invalid day names. Must be one of: ' + validDays.join(', ') });
     }
 
     console.log('Processed days array:', daysArray);
@@ -796,31 +798,20 @@ app.post('/api/devices/:deviceId/schedules', authenticateToken, async (req, res)
       return res.status(400).json({ error: 'Action must be turn_on or turn_off' });
     }
 
-    // Insert schedule into database (pass daysArray directly if jsonb, else JSON.stringify)
+    // Insert schedule into database (stringify daysArray for jsonb)
     const result = await db.query(
       `INSERT INTO schedules 
        (device_id, name, hour, minute, action, days, enabled, repeat_type) 
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
        RETURNING *`,
-      [deviceId, name, hour, minute, action, daysArray, enabled, repeat_type]  // Use daysArray for jsonb
+      [deviceId, name, hour, minute, action, JSON.stringify(daysArray), enabled, repeat_type]
     );
 
     const newSchedule = result.rows[0];
     console.log('Created schedule:', newSchedule);
 
-    // Get parsedDays (handle array or string)
-    let parsedDays = newSchedule.days;
-    if (typeof parsedDays === 'string') {
-      try {
-        parsedDays = JSON.parse(parsedDays);
-      } catch (e) {
-        console.error('Fallback parsing for string days:', e);
-        parsedDays = parsedDays.split(',').map(day => day.trim());
-      }
-    }
-    if (!Array.isArray(parsedDays)) {
-      parsedDays = [];  // Safety fallback
-    }
+    // Use days directly (jsonb returns array)
+    const parsedDays = newSchedule.days;
 
     // Send schedule to device if it's online
     try {
