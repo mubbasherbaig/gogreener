@@ -68,7 +68,6 @@ const Dashboard = () => {
           )
         );
       } else if (message.type === 'schedule_update') {
-        // Trigger refetch of devices to update next schedule
         fetchDevices();
       }
     };
@@ -178,15 +177,6 @@ const Dashboard = () => {
       
       if (response.ok) {
         console.log('Schedule saved:', scheduleData);
-        // Notify WebSocket clients of schedule update
-        wss.clients.forEach(client => {
-          if (client.readyState === WebSocket.OPEN) {
-            client.send(JSON.stringify({
-              type: 'schedule_update',
-              deviceId
-            }));
-          }
-        });
         fetchDevices(); // Refresh devices to update next schedule
       } else {
         alert('Failed to save schedule');
