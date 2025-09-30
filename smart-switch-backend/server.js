@@ -259,17 +259,24 @@ function getNextScheduleTime(schedules) {
       continue;
     }
     
-    // Check all days in the schedule
+    const scheduleTimeInMinutes = schedule.hour * 60 + schedule.minute;
+    
+    // Check each day in the schedule
     scheduleDayNumbers.forEach(day => {
       let minutesUntilSchedule;
-      const scheduleTimeInMinutes = schedule.hour * 60 + schedule.minute;
       
       if (day === currentDay) {
-        // Same day: check if schedule is in the future
+        // Same day: check if schedule is still in the future today
         minutesUntilSchedule = scheduleTimeInMinutes - currentTimeInMinutes;
         if (minutesUntilSchedule <= 0) {
           // Schedule has passed today; check next occurrence
-          minutesUntilSchedule += 7 * 24 * 60; // Next week
+          const nextOccurrence = scheduleDays.map(d => convertDaysToNumbers([d])[0]).sort((a, b) => {
+            const daysUntilA = (a < currentDay) ? (7 - currentDay + a) : (a - currentDay);
+            const daysUntilB = (b < currentDay) ? (7 - currentDay + b) : (b - currentDay);
+            return daysUntilA - daysUntilB;
+          })[0];
+          const daysUntil = (nextOccurrence < currentDay) ? (7 - currentDay + nextOccurrence) : (nextOccurrence - currentDay);
+          minutesUntilSchedule = (daysUntil * 24 * 60) + (scheduleTimeInMinutes - currentTimeInMinutes);
         }
       } else {
         // Different day: calculate days until next occurrence
@@ -378,7 +385,7 @@ async function setupScheduleVerification(deviceId) {
         console.error(`Error checking schedule for ${deviceId}:`, error);
       }
       
-      // Always set up the next schedule check
+      // Set up next schedule check
       console.log(`Setting up NEXT schedule check for ${deviceId}...`);
       setupScheduleVerification(deviceId);
       
