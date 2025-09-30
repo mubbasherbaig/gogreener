@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { WS_BASE_URL } from '../config';
-import { API_BASE_URL } from '../config';
 
 const DeviceCard = ({ device, onControl, onViewChart, onDelete, onSchedules }) => {
   const isOnline = device.is_online;
@@ -61,6 +60,7 @@ const DeviceCard = ({ device, onControl, onViewChart, onDelete, onSchedules }) =
       
       if (response.ok) {
         const data = await response.json();
+        console.log('Next schedule data:', data); // Debug log
         setNextSchedule(data.message ? null : data);
       } else {
         setNextSchedule(null);
@@ -106,7 +106,7 @@ const DeviceCard = ({ device, onControl, onViewChart, onDelete, onSchedules }) =
         <p><strong>Current:</strong> {currentReading.toFixed(2)} A</p>
         <p><strong>Last Seen:</strong> {device.last_seen ? new Date(device.last_seen).toLocaleTimeString() : 'Never'}</p>
         {nextSchedule ? (
-          <p><strong>Next Schedule:</strong> The device will {nextSchedule.action} {nextSchedule.displayDay ? nextSchedule.displayDay.toLowerCase() : 'unknown day'} at {nextSchedule.time}</p>
+          <p><strong>Next Schedule:</strong> The device will {nextSchedule.action} {nextSchedule.displayDay ? nextSchedule.displayDay.toLowerCase() : 'today'} at {nextSchedule.time}</p>
         ) : (
           <p><strong>Next Schedule:</strong> No upcoming schedules</p>
         )}

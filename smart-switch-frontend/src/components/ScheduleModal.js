@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { API_BASE_URL } from '../config';
 
 const ScheduleModal = ({ device, onClose, onSave }) => {
@@ -15,6 +15,7 @@ const ScheduleModal = ({ device, onClose, onSave }) => {
     enabled: true,
     repeat_type: 'weekly'
   });
+  const fetchTriggered = useRef(false); // Flag to prevent duplicate fetches
 
   const daysOfWeek = [
     { key: 'monday', label: 'Mon' },
@@ -27,7 +28,10 @@ const ScheduleModal = ({ device, onClose, onSave }) => {
   ];
 
   useEffect(() => {
-    fetchSchedules();
+    if (!fetchTriggered.current) {
+      fetchTriggered.current = true;
+      fetchSchedules();
+    }
   }, [device.id]);
 
   const fetchSchedules = async () => {
@@ -49,7 +53,7 @@ const ScheduleModal = ({ device, onClose, onSave }) => {
           time: `${schedule.hour.toString().padStart(2, '0')}:${schedule.minute.toString().padStart(2, '0')}`,
           days: Array.isArray(schedule.days) ? schedule.days : JSON.parse(schedule.days || '[]')
         }));
-        setSchedules(formattedSchedules); // Set new data directly
+        setSchedules(formattedSchedules);
       } else {
         const errorData = await response.json();
         setError(errorData.error || 'Failed to fetch schedules');
@@ -131,14 +135,8 @@ const ScheduleModal = ({ device, onClose, onSave }) => {
         });
 
         if (response.ok) {
-          const newScheduleData = await response.json();
-          setSchedules(prev => {
-            const updated = [...prev, { ...newScheduleData, time: newSchedule.time, days: newSchedule.days }];
-            console.log('Updated schedules:', updated); // Debug log
-            return updated;
-          });
           console.log('Schedule created successfully');
-          fetchSchedules();
+          // Let WebSocket trigger fetchSchedules
         } else {
           const errorData = await response.json();
           throw new Error(errorData.error || 'Failed to create schedule');
