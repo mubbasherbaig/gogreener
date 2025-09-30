@@ -1,5 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { WS_BASE_URL } from '../config';
+import React, { useState, useEffect } from 'react';
 import { API_BASE_URL } from '../config';
 
 const DeviceCard = ({ device, onControl, onViewChart, onDelete, onSchedules }) => {
@@ -7,49 +6,10 @@ const DeviceCard = ({ device, onControl, onViewChart, onDelete, onSchedules }) =
   const switchState = device.switch_state;
   const currentReading = parseFloat(device.current_reading) || 0;
   const [nextSchedule, setNextSchedule] = useState(null);
-  const wsRef = useRef(null);
 
   useEffect(() => {
     fetchNextSchedule();
-    connectWebSocket();
-
-    return () => {
-      if (wsRef.current) {
-        wsRef.current.close();
-      }
-    };
   }, [device.id]);
-
-  const connectWebSocket = () => {
-    const token = localStorage.getItem('token');
-    if (!token || wsRef.current) return;
-
-    const wsUrl = `${WS_BASE_URL}/?token=${token}`; // Ensure token is in URL or message
-    const ws = new WebSocket(wsUrl);
-    wsRef.current = ws;
-
-    ws.onopen = () => {
-      console.log('DeviceCard WebSocket connected for device:', device.id);
-      ws.send(JSON.stringify({ type: 'user_connect', token }));
-    };
-
-    ws.onmessage = (event) => {
-      const message = JSON.parse(event.data);
-      if (message.type === 'schedule_update' && message.deviceId === device.id) {
-        console.log('Schedule updated, refetching next schedule for:', device.id);
-        fetchNextSchedule();
-      }
-    };
-
-    ws.onclose = () => {
-      console.log('DeviceCard WebSocket disconnected for device:', device.id);
-      // Optional: Reconnect logic if needed
-    };
-
-    ws.onerror = (error) => {
-      console.error('DeviceCard WebSocket error:', error);
-    };
-  };
 
   const fetchNextSchedule = async () => {
     try {
