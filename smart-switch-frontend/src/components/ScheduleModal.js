@@ -33,6 +33,7 @@ const ScheduleModal = ({ device, onClose, onSave }) => {
   const fetchSchedules = async () => {
     setLoading(true);
     setError('');
+    setSchedules([]); // Clear schedules to prevent duplicates
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(`${API_BASE_URL}/api/devices/${device.id}/schedules`, {
