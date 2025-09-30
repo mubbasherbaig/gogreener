@@ -773,7 +773,14 @@ app.get('/api/devices/:deviceId/schedules', authenticateToken, async (req, res) 
     res.status(500).json({ error: 'Database error' });
   }
 });
-
+wss.clients.forEach(client => {
+  if (client.readyState === WebSocket.OPEN) {
+    client.send(JSON.stringify({
+      type: 'schedule_update',
+      deviceId
+    }));
+  }
+});
 // CREATE a new schedule
 app.post('/api/devices/:deviceId/schedules', authenticateToken, async (req, res) => {
   const { deviceId } = req.params;

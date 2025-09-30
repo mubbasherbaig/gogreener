@@ -49,7 +49,7 @@ const ScheduleModal = ({ device, onClose, onSave }) => {
           time: `${schedule.hour.toString().padStart(2, '0')}:${schedule.minute.toString().padStart(2, '0')}`,
           days: Array.isArray(schedule.days) ? schedule.days : JSON.parse(schedule.days || '[]')
         }));
-        setSchedules(formattedSchedules);
+        setSchedules(formattedSchedules); // Set new data directly
       } else {
         const errorData = await response.json();
         setError(errorData.error || 'Failed to fetch schedules');
@@ -132,11 +132,11 @@ const ScheduleModal = ({ device, onClose, onSave }) => {
 
         if (response.ok) {
           const newScheduleData = await response.json();
-          setSchedules(prev => [...prev, { 
-            ...newScheduleData, 
-            time: newSchedule.time, 
-            days: newSchedule.days 
-          }]);
+          setSchedules(prev => {
+            const updated = [...prev, { ...newScheduleData, time: newSchedule.time, days: newSchedule.days }];
+            console.log('Updated schedules:', updated); // Debug log
+            return updated;
+          });
           console.log('Schedule created successfully');
         } else {
           const errorData = await response.json();
@@ -144,7 +144,6 @@ const ScheduleModal = ({ device, onClose, onSave }) => {
         }
       }
 
-      // Reset form
       setNewSchedule({
         name: '',
         time: '',
@@ -156,7 +155,6 @@ const ScheduleModal = ({ device, onClose, onSave }) => {
       setShowAddForm(false);
       setEditingSchedule(null);
 
-      // Call onSave with device.id and scheduleData
       if (onSave) {
         onSave(device.id, scheduleData);
       }
