@@ -39,13 +39,17 @@ db.query('SELECT NOW()', (err, result) => {
 });
 
 // Helper function to convert day names to numbers (Sunday = 0, Monday = 1, etc.)
-function convertDaysToNumbers(dayNames) {
+function convertDaysToNumbers(days) {
   const dayMap = {
-    'sunday': 0, 'monday': 1, 'tuesday': 2, 'wednesday': 3,
-    'thursday': 4, 'friday': 5, 'saturday': 6
+    'sunday': 0,
+    'monday': 1,
+    'tuesday': 2,
+    'wednesday': 3,
+    'thursday': 4,
+    'friday': 5,
+    'saturday': 6
   };
-  
-  return dayNames.map(day => dayMap[day.toLowerCase()]).filter(num => num !== undefined);
+  return days.map(day => dayMap[day.toLowerCase()]).filter(num => num !== undefined);
 }
 
 // WebSocket helper functions
@@ -231,11 +235,14 @@ wss.on('connection', (ws, req) => {
 // Map to store active schedule timers
 const scheduleTimers = new Map();
 
-// Function to calculate next schedule check time
+const { DateTime } = require('luxon');
+
 function getNextScheduleTime(schedules) {
-  const now = new Date();
-  const currentDay = now.getDay();
-  const currentTimeInMinutes = now.getHours() * 60 + now.getMinutes();
+  const now = DateTime.now().setZone('Asia/Karachi'); // PKT (UTC+5)
+  const currentDay = now.weekday % 7; // Luxon: 1=Monday, 7=Sunday; convert to 0=Sunday, 6=Saturday
+  const currentTimeInMinutes = now.hour * 60 + now.minute;
+  
+  console.log(`Current time in PKT: ${now.toISO()} (Day: ${currentDay}, Minutes: ${currentTimeInMinutes})`);
   
   let nearestSchedule = null;
   let nearestTime = Infinity;
