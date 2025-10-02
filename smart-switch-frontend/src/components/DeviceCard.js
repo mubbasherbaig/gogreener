@@ -95,9 +95,9 @@ const DeviceCard = ({ device, onControl, onViewChart, onDelete, onSchedules }) =
           <div className={`status ${isOnline ? 'online' : 'offline'}`}>
             {isOnline ? 'Online' : 'Offline'}
           </div>
-          <button className="delete-btn" onClick={handleDelete} title="Delete Device">
+          {/* <button className="delete-btn" onClick={handleDelete} title="Delete Device">
             🗑️
-          </button>
+          </button> */}
         </div>
       </div>
       
