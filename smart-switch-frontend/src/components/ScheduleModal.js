@@ -154,9 +154,7 @@ const ScheduleModal = ({ device, onClose, onSave }) => {
       setShowAddForm(false);
       setEditingSchedule(null);
 
-      if (onSave) {
-        onSave(device.id, scheduleData);
-      }
+      await fetchSchedules();
 
     } catch (error) {
       console.error('Error saving schedule:', error);
