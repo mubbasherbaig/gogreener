@@ -135,11 +135,11 @@ const DeviceCard = ({ device, onControl, onViewChart, onDelete, onSchedules }) =
           </button>
           
           <button 
+            className="schedule-btn"
             onClick={handleSchedules}
-            disabled={!isOnline}
-            style={{ opacity: isOnline ? 1 : 0.5, cursor: isOnline ? 'pointer' : 'not-allowed' }}
+            title="Set Schedules"
           >
-            {isOnline ? 'Schedules' : 'Schedules (Offline)'}
+            Schedule
           </button>
         </div>
       </div>
