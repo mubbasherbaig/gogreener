@@ -786,150 +786,26 @@ app.post('/api/devices/:deviceId/schedules', authenticateToken, async (req, res)
   const { deviceId } = req.params;
   const { name, time, action, days, enabled = true, repeat_type = 'weekly' } = req.body;
 
-  console.log('=== Schedule Creation Debug ===');
-  console.log('Raw request body:', req.body);
-  console.log('Days received:', days);
-  console.log('Days type:', typeof days);
-  console.log('Days is array:', Array.isArray(days));
-
   try {
-    // Verify user owns the device
     const deviceCheck = await db.query(
       'SELECT * FROM devices WHERE id = $1 AND (user_id = $2 OR $3 = $4)',
       [deviceId, req.user.id, req.user.role, 'admin']
     );
     
     if (deviceCheck.rows.length === 0) {
-      return res.status(404).json({ error: 'Device not found or access denied' });
+      return res.status(404).json({ error: 'Device not found' });
     }
 
-    // Parse time (HH:MM format)
     if (!time || !time.includes(':')) {
-      return res.status(400).json({ error: 'Invalid time format' });
+      return res.status(400).json({ error: 'Invalid time' });
     }
     
     const [hour, minute] = time.split(':').map(Number);
     
-    // Validate input
     if (!name || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
-      return res.status(400).json({ error: 'Invalid schedule data - name or time issue' });
+      return res.status(400).json({ error: 'Invalid data' });
     }
 
-    // Handle days properly - ensure it's an array
-    let daysArray;
-    if (Array.isArray(days)) {
-      daysArray = days;
-    } else if (typeof days === 'string') {
-      try {
-        daysArray = JSON.parse(days);
-      } catch (e) {
-        return res.status(400).json({ error: 'Invalid days format - must be array' });
-      }
-    } else {
-      return res.status(400).json({ error: 'Days must be provided as an array' });
-    }
-
-    if (!Array.isArray(daysArray) || daysArray.length === 0) {
-      return res.status(400).json({ error: 'At least one day must be selected' });
-    }
-
-    // Validate day names
-    const validDays = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-    if (!daysArray.every(day => validDays.includes(day.toLowerCase()))) {
-      return res.status(400).json({ error: 'Invalid day names' });
-    }
-
-    console.log('Processed days array:', daysArray);
-
-    // Validate action
-    if (action !== 'turn_on' && action !== 'turn_off') {
-      return res.status(400).json({ error: 'Action must be turn_on or turn_off' });
-    }
-
-    // Insert schedule into database
-    const result = await db.query(
-      `INSERT INTO schedules 
-       (device_id, name, hour, minute, action, days, enabled, repeat_type) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
-       RETURNING *`,
-      [deviceId, name, hour, minute, action, JSON.stringify(daysArray), enabled, repeat_type]
-    );
-
-    const newSchedule = result.rows[0];
-    console.log('Created schedule:', newSchedule);
-
-    // Use days directly (jsonb returns array)
-    const parsedDays = newSchedule.days;
-
-    // Send schedule to device if it's online
-    try {
-      const scheduleCommand = {
-        type: 'command',
-        command_type: 'schedule',
-        schedule_action: 'add',
-        slot: -1,
-        enabled: newSchedule.enabled,
-        action: newSchedule.action,
-        hour: newSchedule.hour,
-        minute: newSchedule.minute,
-        days: convertDaysToNumbers(parsedDays),
-        schedule_id: newSchedule.id
-      };
-
-      const sent = sendCommandToDevice(deviceId, scheduleCommand);
-      console.log('Device command sent:', sent);
-      setupScheduleVerification(deviceId); // Ensure this uses updated function
-      res.json({ 
-        ...newSchedule, 
-        days: parsedDays,
-        synced_to_device: sent 
-      });
-
-    } catch (deviceError) {
-      console.error('Error sending to device:', deviceError);
-      res.json({ 
-        ...newSchedule, 
-        days: parsedDays,
-        synced_to_device: false,
-        sync_error: deviceError.message
-      });
-    }
-
-  } catch (error) {
-    console.error('=== Database Error ===');
-    console.error('Error message:', error.message);
-    console.error('Error code:', error.code);
-    console.error('Error detail:', error.detail);
-    console.error('Stack:', error.stack);
-    
-    res.status(500).json({ 
-      error: 'Database error: ' + error.message,
-      code: error.code 
-    });
-  }
-});
-
-// UPDATE a schedule
-app.put('/api/devices/:deviceId/schedules/:scheduleId', authenticateToken, async (req, res) => {
-  const { deviceId, scheduleId } = req.params;
-  const { name, time, action, days, enabled, repeat_type } = req.body;
-
-  try {
-    // Verify user owns the device and schedule exists
-    const scheduleCheck = await db.query(
-      `SELECT s.* FROM schedules s 
-       JOIN devices d ON s.device_id = d.id 
-       WHERE s.id = $1 AND s.device_id = $2 AND (d.user_id = $3 OR $4 = $5)`,
-      [scheduleId, deviceId, req.user.id, req.user.role, 'admin']
-    );
-    
-    if (scheduleCheck.rows.length === 0) {
-      return res.status(404).json({ error: 'Schedule not found or access denied' });
-    }
-
-    const [hour, minute] = time.split(':').map(Number);
-
-    // Handle days properly - ensure it's an array
     let daysArray;
     if (Array.isArray(days)) {
       daysArray = days;
@@ -940,67 +816,70 @@ app.put('/api/devices/:deviceId/schedules/:scheduleId', authenticateToken, async
         return res.status(400).json({ error: 'Invalid days format' });
       }
     } else {
-      return res.status(400).json({ error: 'Days must be provided' });
+      return res.status(400).json({ error: 'Days required' });
     }
 
-    // Update schedule in database
+    if (!Array.isArray(daysArray) || daysArray.length === 0) {
+      return res.status(400).json({ error: 'Select at least one day' });
+    }
+
+    const validDays = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+    if (!daysArray.every(day => validDays.includes(day.toLowerCase()))) {
+      return res.status(400).json({ error: 'Invalid day names' });
+    }
+
+    if (action !== 'turn_on' && action !== 'turn_off') {
+      return res.status(400).json({ error: 'Action must be turn_on or turn_off' });
+    }
+
+    // Insert into database
     const result = await db.query(
-      `UPDATE schedules 
-       SET name = $1, hour = $2, minute = $3, action = $4, days = $5, 
-           enabled = $6, repeat_type = $7, updated_at = CURRENT_TIMESTAMP
-       WHERE id = $8 AND device_id = $9 
+      `INSERT INTO schedules 
+       (device_id, name, hour, minute, action, days, enabled, repeat_type) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
        RETURNING *`,
-      [name, hour, minute, action, JSON.stringify(daysArray), enabled, repeat_type, scheduleId, deviceId]
+      [deviceId, name, hour, minute, action, JSON.stringify(daysArray), enabled, repeat_type]
     );
 
-    const updatedSchedule = result.rows[0];
+    const newSchedule = result.rows[0];
+    const parsedDays = newSchedule.days;
 
-    // Parse days for response
-    let parsedDays;
-    try {
-      parsedDays = JSON.parse(updatedSchedule.days);
-      if (!Array.isArray(parsedDays)) {
-        parsedDays = updatedSchedule.days.split(',').map(day => day.trim());
-      }
-    } catch (e) {
-      console.error('Error parsing updated days:', e);
-      parsedDays = daysArray; // Fallback to input days
-    }
-
-    // Send update to device if it's online
+    // FIXED: Send to device WITHOUT slot - let ESP find empty slot
     const scheduleCommand = {
       type: 'command',
       command_type: 'schedule',
       schedule_action: 'add',
-      slot: scheduleCheck.rows[0].device_slot || -1,
-      enabled: updatedSchedule.enabled,
-      action: updatedSchedule.action,
-      hour: updatedSchedule.hour,
-      minute: updatedSchedule.minute,
+      // NO SLOT - let ESP decide
+      enabled: newSchedule.enabled,
+      action: newSchedule.action,
+      hour: newSchedule.hour,
+      minute: newSchedule.minute,
       days: convertDaysToNumbers(parsedDays),
-      schedule_id: updatedSchedule.id
+      schedule_id: newSchedule.id,
+      name: newSchedule.name  // Send actual name from DB
     };
 
     const sent = sendCommandToDevice(deviceId, scheduleCommand);
-    setupScheduleVerification(deviceId);
+    console.log('Schedule command sent:', sent ? 'YES' : 'NO');
+
     res.json({ 
-      ...updatedSchedule, 
+      ...newSchedule, 
       days: parsedDays,
       synced_to_device: sent 
     });
 
   } catch (error) {
-    console.error('Error updating schedule:', error);
+    console.error('Error creating schedule:', error);
     res.status(500).json({ error: 'Database error: ' + error.message });
   }
 });
 
-// DELETE a schedule
-app.delete('/api/devices/:deviceId/schedules/:scheduleId', authenticateToken, async (req, res) => {
+// UPDATE a schedule
+app.put('/api/devices/:deviceId/schedules/:scheduleId', authenticateToken, async (req, res) => {
   const { deviceId, scheduleId } = req.params;
+  const { name, time, action, days, enabled, repeat_type } = req.body;
 
   try {
-    // Verify user owns the device and schedule exists
     const scheduleCheck = await db.query(
       `SELECT s.* FROM schedules s 
        JOIN devices d ON s.device_id = d.id 
@@ -1009,24 +888,88 @@ app.delete('/api/devices/:deviceId/schedules/:scheduleId', authenticateToken, as
     );
     
     if (scheduleCheck.rows.length === 0) {
-      return res.status(404).json({ error: 'Schedule not found or access denied' });
+      return res.status(404).json({ error: 'Schedule not found' });
     }
 
-    // Delete from database
+    const [hour, minute] = time.split(':').map(Number);
+    
+    let daysArray;
+    if (Array.isArray(days)) {
+      daysArray = days;
+    } else if (typeof days === 'string') {
+      daysArray = JSON.parse(days);
+    } else {
+      return res.status(400).json({ error: 'Invalid days' });
+    }
+
+    const result = await db.query(
+      `UPDATE schedules 
+       SET name = $1, hour = $2, minute = $3, action = $4, days = $5, enabled = $6, repeat_type = $7
+       WHERE id = $8 AND device_id = $9
+       RETURNING *`,
+      [name, hour, minute, action, JSON.stringify(daysArray), enabled, repeat_type, scheduleId, deviceId]
+    );
+
+    const updatedSchedule = result.rows[0];
+
+    // FIXED: Send update to device WITHOUT slot
+    const updateCommand = {
+      type: 'command',
+      command_type: 'schedule',
+      schedule_action: 'update',
+      // NO SLOT - ESP will find by ID
+      enabled: updatedSchedule.enabled,
+      action: updatedSchedule.action,
+      hour: updatedSchedule.hour,
+      minute: updatedSchedule.minute,
+      days: convertDaysToNumbers(updatedSchedule.days),
+      schedule_id: parseInt(scheduleId),
+      name: updatedSchedule.name
+    };
+
+    const sent = sendCommandToDevice(deviceId, updateCommand);
+
+    res.json({ 
+      ...updatedSchedule, 
+      days: updatedSchedule.days,
+      synced_to_device: sent 
+    });
+
+  } catch (error) {
+    console.error('Error updating schedule:', error);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// DELETE a schedule
+app.delete('/api/devices/:deviceId/schedules/:scheduleId', authenticateToken, async (req, res) => {
+  const { deviceId, scheduleId } = req.params;
+
+  try {
+    const scheduleCheck = await db.query(
+      `SELECT s.* FROM schedules s 
+       JOIN devices d ON s.device_id = d.id 
+       WHERE s.id = $1 AND s.device_id = $2 AND (d.user_id = $3 OR $4 = $5)`,
+      [scheduleId, deviceId, req.user.id, req.user.role, 'admin']
+    );
+    
+    if (scheduleCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Schedule not found' });
+    }
+
     await db.query('DELETE FROM schedules WHERE id = $1 AND device_id = $2', [scheduleId, deviceId]);
-    setupScheduleVerification(deviceId);
-    // Send delete command to device if it's online
+
+    // FIXED: Send delete with schedule_id, not slot
     const deleteCommand = {
       type: 'command',
       command_type: 'schedule',
       schedule_action: 'delete',
-      slot: scheduleCheck.rows[0].device_slot || -1,
-      schedule_id: parseInt(scheduleId)
+      schedule_id: parseInt(scheduleId)  // ESP will find by ID and delete
     };
 
     const sent = sendCommandToDevice(deviceId, deleteCommand);
 
-    res.json({ message: 'Schedule deleted successfully', synced_to_device: sent });
+    res.json({ message: 'Deleted', synced_to_device: sent });
 
   } catch (error) {
     console.error('Error deleting schedule:', error);
@@ -1109,55 +1052,58 @@ app.post('/api/devices/:deviceId/schedules/sync', authenticateToken, async (req,
   const { deviceId } = req.params;
 
   try {
-    // Verify user owns the device
     const deviceCheck = await db.query(
       'SELECT * FROM devices WHERE id = $1 AND (user_id = $2 OR $3 = $4)',
       [deviceId, req.user.id, req.user.role, 'admin']
     );
-    
+
     if (deviceCheck.rows.length === 0) {
-      return res.status(404).json({ error: 'Device not found or access denied' });
+      return res.status(404).json({ error: 'Device not found' });
     }
 
-    // Get all schedules for this device
     const schedules = await db.query(
       'SELECT * FROM schedules WHERE device_id = $1 ORDER BY id',
       [deviceId]
     );
 
     if (!deviceConnections.has(deviceId)) {
-      return res.json({ message: 'Device is offline - schedules will sync when device comes online', count: schedules.rows.length });
+      return res.json({ message: 'Device offline - will sync when online', count: schedules.rows.length });
     }
 
-    // Clear all schedules on device first
+    // Clear all schedules first
     sendCommandToDevice(deviceId, {
       type: 'command',
       command_type: 'schedule',
       schedule_action: 'clear_all'
     });
 
-    // Send each schedule to device
+    // Wait for clear to complete
+    await new Promise(resolve => setTimeout(resolve, 500));
+
+    // FIXED: Send schedules WITHOUT explicit slots
     let syncCount = 0;
-    schedules.rows.forEach((schedule, index) => {
+    for (const schedule of schedules.rows) {
       const scheduleCommand = {
         type: 'command',
         command_type: 'schedule',
         schedule_action: 'add',
-        slot: index,
+        // NO SLOT - let ESP find empty slots
         enabled: schedule.enabled,
         action: schedule.action,
         hour: schedule.hour,
         minute: schedule.minute,
         days: convertDaysToNumbers(JSON.parse(schedule.days)),
-        schedule_id: schedule.id
+        schedule_id: schedule.id,
+        name: schedule.name
       };
 
       if (sendCommandToDevice(deviceId, scheduleCommand)) {
         syncCount++;
+        await new Promise(resolve => setTimeout(resolve, 200)); // Small delay between schedules
       }
-    });
+    }
 
-    res.json({ message: 'Schedules synced to device', synced_count: syncCount, total_count: schedules.rows.length });
+    res.json({ message: 'Synced', synced_count: syncCount, total_count: schedules.rows.length });
 
   } catch (error) {
     console.error('Error syncing schedules:', error);
