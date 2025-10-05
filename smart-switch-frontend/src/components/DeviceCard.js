@@ -137,7 +137,8 @@ const DeviceCard = ({ device, onControl, onViewChart, onDelete, onSchedules }) =
           <button 
             className="schedule-btn"
             onClick={handleSchedules}
-            title="Set Schedules"
+            disabled={!isOnline}
+            title={isOnline ? "Set Schedules" : "Device must be online to add schedules"}
           >
             Schedule
           </button>
