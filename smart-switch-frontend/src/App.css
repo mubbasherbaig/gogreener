@@ -1609,3 +1609,8 @@ input:checked + .toggle-slider:before {
   font-style: italic;
   color: #2d3748; /* Tailwind gray-800 */
 }
+
+.schedule-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
