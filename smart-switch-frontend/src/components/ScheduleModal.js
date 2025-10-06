@@ -311,34 +311,35 @@ const ScheduleModal = ({ device, onClose, onSave }) => {
 
         <div className="schedule-content">
           <div className="schedules-section">
-            <div className="section-header">
-              <h4>Current Schedules</h4>
-              <button 
-                className="clear-device-btn" 
-                onClick={handleClearDevice}
-                disabled={!device.is_online}
-                style={{ marginBottom: '10px', backgroundColor: '#ff5722' }}
-              >
-                Clear Device EEPROM
-              </button>
-              <button 
-                className="add-schedule-btn"
-                onClick={() => {
-                  setShowAddForm(true);
-                  setEditingSchedule(null);
-                  setNewSchedule({
-                    name: '',
-                    time: '',
-                    action: 'turn_on',
-                    days: [],
-                    enabled: true,
-                    repeat_type: 'weekly'
-                  });
-                }}
-                disabled={loading}
-              >
-                + Add Schedule
-              </button>
+            <div style={{ 
+              display: 'flex', 
+              justifyContent: 'space-between', 
+              alignItems: 'center',
+              marginBottom: '20px' 
+            }}>
+              <h3>Current Schedules</h3>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button 
+                  className="clear-device-btn" 
+                  onClick={handleClearDevice}
+                  disabled={!device.is_online}
+                  style={{
+                    padding: '8px 16px',
+                    backgroundColor: 'transparent',
+                    color: '#dc3545',
+                    border: '1px solid #dc3545',
+                    borderRadius: '4px',
+                    cursor: device.is_online ? 'pointer' : 'not-allowed',
+                    opacity: device.is_online ? 1 : 0.5,
+                    fontSize: '14px'
+                  }}
+                >
+                  Clear Device
+                </button>
+                <button className="add-schedule-btn" onClick={() => setShowAddForm(true)}>
+                  + Add Schedule
+                </button>
+              </div>
             </div>
 
             {loading && <div className="loading">Loading schedules...</div>}
