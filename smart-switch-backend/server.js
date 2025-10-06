@@ -684,6 +684,44 @@ app.get('/api/devices/:deviceId/telemetry', authenticateToken, async (req, res) 
   }
 });
 
+app.post('/api/devices/:deviceId/schedules/clear-device', authenticateToken, async (req, res) => {
+  const { deviceId } = req.params;
+
+  try {
+    const deviceCheck = await db.query(
+      'SELECT * FROM devices WHERE id = $1 AND (user_id = $2 OR $3 = $4)',
+      [deviceId, req.user.id, req.user.role, 'admin']
+    );
+    
+    if (deviceCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Device not found' });
+    }
+
+    if (!deviceConnections.has(deviceId)) {
+      return res.status(400).json({ error: 'Device is offline' });
+    }
+
+    // Send clear command to ESP
+    const clearCommand = {
+      type: 'command',
+      command_type: 'schedule',
+      schedule_action: 'clear_all'
+    };
+
+    const sent = sendCommandToDevice(deviceId, clearCommand);
+
+    if (sent) {
+      res.json({ message: 'Device schedules cleared' });
+    } else {
+      res.status(500).json({ error: 'Failed to send command' });
+    }
+
+  } catch (error) {
+    console.error('Error clearing device schedules:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // Check if device is registered
 app.get('/api/devices/check/:deviceId', authenticateToken, async (req, res) => {
   const { deviceId } = req.params;

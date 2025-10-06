@@ -207,6 +207,32 @@ const ScheduleModal = ({ device, onClose, onSave }) => {
     setLoading(false);
   };
 
+  const handleClearDevice = async () => {
+    if (!window.confirm('Clear all schedules from device EEPROM? This will remove schedules from the ESP but keep them in the database.')) {
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_BASE_URL}/api/devices/${device.id}/schedules/clear-device`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (response.ok) {
+        alert('Device schedules cleared successfully');
+      } else {
+        const error = await response.json();
+        alert(error.error || 'Failed to clear device schedules');
+      }
+    } catch (error) {
+      console.error('Error clearing device:', error);
+      alert('Error: ' + error.message);
+    }
+  };
+
   const handleToggleSchedule = async (scheduleId) => {
     const schedule = schedules.find(s => s.id === scheduleId);
     if (!schedule) return;
@@ -287,6 +313,14 @@ const ScheduleModal = ({ device, onClose, onSave }) => {
           <div className="schedules-section">
             <div className="section-header">
               <h4>Current Schedules</h4>
+              <button 
+                className="clear-device-btn" 
+                onClick={handleClearDevice}
+                disabled={!device.is_online}
+                style={{ marginBottom: '10px', backgroundColor: '#ff5722' }}
+              >
+                Clear Device EEPROM
+              </button>
               <button 
                 className="add-schedule-btn"
                 onClick={() => {
