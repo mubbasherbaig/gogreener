@@ -115,7 +115,7 @@ const DeviceChart = ({ device, onClose }) => {
             📅 {data.fullTime}
           </p>
           <p style={{ margin: 0, color: '#2196F3', fontSize: '14px', fontWeight: 'bold' }}>
-            ⚡ Current: {data.current.toFixed(2)} A
+            Current: {data.current.toFixed(2)} A
           </p>
         </div>
       );
@@ -226,7 +226,7 @@ const DeviceChart = ({ device, onClose }) => {
         ) : (
           <div className="chart-container">
             <h4 style={{ fontSize: '18px', fontWeight: 'bold', color: '#2196F3', marginBottom: '15px' }}>
-              ⚡ Current Reading (A)
+              Current Reading (A)
             </h4>
             <ResponsiveContainer width="100%" height={320}>
               <LineChart 
