@@ -259,7 +259,7 @@ const DeviceChart = ({ device, onClose }) => {
             {/* Switch State Chart */}
             <div className="chart-card">
               <div className="chart-header">
-                <span className="chart-icon">🔌</span>
+                <span className="chart-icon"></span>
                 <h4>Switch State</h4>
                 <span className="chart-unit">ON/OFF</span>
               </div>
