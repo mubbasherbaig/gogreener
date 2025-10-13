@@ -655,27 +655,39 @@ app.get('/api/devices/:deviceId/telemetry', authenticateToken, async (req, res) 
   const { hours = 24 } = req.query;
 
   try {
+    // CRITICAL FIX: Convert hours to integer FIRST
+    const hoursInt = parseInt(hours, 10);
+    
+    // Validate the parsed value
+    if (isNaN(hoursInt) || hoursInt < 0) {
+      return res.status(400).json({ error: 'Invalid hours parameter' });
+    }
+
     // Calculate appropriate limit based on time range
     // Assuming 10-second heartbeat interval
     let limit;
-    if (hours <= 1) {
+    if (hoursInt <= 1) {
       limit = 360;        // 1 hour = 360 data points
-    } else if (hours <= 6) {
+    } else if (hoursInt <= 6) {
       limit = 2160;       // 6 hours = 2,160 data points
-    } else if (hours <= 24) {
+    } else if (hoursInt <= 24) {
       limit = 8640;       // 24 hours = 8,640 data points
     } else {
       limit = 60480;      // 1 week = 60,480 data points
     }
 
+    console.log(`Fetching telemetry for device ${deviceId}: ${hoursInt} hours (limit: ${limit})`);
+
     const result = await db.query(
       `SELECT * FROM device_states 
        WHERE device_id = $1 
-       AND timestamp >= NOW() - INTERVAL '${parseInt(hours)} hours'
+       AND timestamp >= NOW() - INTERVAL '1 hour' * $2
        ORDER BY timestamp DESC 
-       LIMIT $2`,
-      [deviceId, limit]
+       LIMIT $3`,
+      [deviceId, hoursInt, limit]
     );
+    
+    console.log(`Returned ${result.rows.length} data points for ${hoursInt} hours`);
     
     res.json(result.rows);
   } catch (error) {
