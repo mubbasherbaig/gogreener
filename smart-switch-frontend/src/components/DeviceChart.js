@@ -265,7 +265,7 @@ const DeviceChart = ({ device, onClose }) => {
               color: '#666',
               fontWeight: '500'
             }}>
-              📊 {telemetryData.length} data points
+              {/* 📊 {telemetryData.length} data points */}
             </span>
           )}
         </div>
