@@ -11,34 +11,29 @@ const DeviceChart = ({ device, onClose }) => {
     fetchTelemetry();
   }, [device.id, timeRange]);
 
-  // Format time based on selected range
+  // Format time based on selected range - MUCH MORE PROMINENT
   const formatTimeForRange = (timestamp, hours) => {
     const date = new Date(timestamp);
     
     if (hours <= 6) {
-      // For short ranges (1-6 hours): show only time
+      // For short ranges: show only time
       return date.toLocaleTimeString('en-US', { 
         hour: '2-digit', 
         minute: '2-digit',
         hour12: false 
       });
-    } else if (hours <= 24) {
-      // For 24 hours: show date + time
-      return date.toLocaleString('en-US', { 
+    } else {
+      // For longer ranges: show date AND time on separate lines
+      const dateStr = date.toLocaleDateString('en-US', { 
         month: 'short',
-        day: 'numeric',
-        hour: '2-digit', 
+        day: 'numeric'
+      });
+      const timeStr = date.toLocaleTimeString('en-US', { 
+        hour: '2-digit',
         minute: '2-digit',
         hour12: false 
       });
-    } else {
-      // For week: show date + time (more compact)
-      return date.toLocaleString('en-US', { 
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        hour12: false 
-      });
+      return `${dateStr}\n${timeStr}`;
     }
   };
 
@@ -58,7 +53,14 @@ const DeviceChart = ({ device, onClose }) => {
         
         const formattedData = data.map(item => ({
           time: formatTimeForRange(item.timestamp, hoursInt),
-          fullTime: new Date(item.timestamp).toLocaleString(), // For tooltip
+          fullTime: new Date(item.timestamp).toLocaleString('en-US', { 
+            month: 'short', 
+            day: 'numeric', 
+            year: 'numeric',
+            hour: '2-digit', 
+            minute: '2-digit',
+            hour12: true 
+          }),
           current: parseFloat(item.current_reading) || 0,
           voltage: parseFloat(item.voltage) || 0,
           state: item.switch_state ? 1 : 0,
@@ -73,21 +75,23 @@ const DeviceChart = ({ device, onClose }) => {
     setLoading(false);
   };
 
-  // Custom tooltip for better display
-  const CustomTooltip = ({ active, payload, label }) => {
+  // BOLD Custom tooltip
+  const CustomTooltip = ({ active, payload }) => {
     if (active && payload && payload.length) {
       const data = payload[0].payload;
       return (
         <div style={{ 
-          backgroundColor: 'white', 
-          padding: '10px', 
-          border: '1px solid #ccc',
-          borderRadius: '4px',
-          boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+          backgroundColor: '#1a1a1a', 
+          padding: '12px 16px', 
+          border: '2px solid #4CAF50',
+          borderRadius: '8px',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.3)'
         }}>
-          <p style={{ margin: 0, fontSize: '12px' }}><strong>Time:</strong> {data.fullTime}</p>
-          <p style={{ margin: 0, color: payload[0].color, fontSize: '12px' }}>
-            <strong>State:</strong> {data.stateText}
+          <p style={{ margin: 0, fontSize: '13px', fontWeight: 'bold', color: '#fff', marginBottom: '6px' }}>
+            📅 {data.fullTime}
+          </p>
+          <p style={{ margin: 0, color: '#4CAF50', fontSize: '14px', fontWeight: 'bold' }}>
+            ⚡ State: {data.stateText}
           </p>
         </div>
       );
@@ -95,21 +99,23 @@ const DeviceChart = ({ device, onClose }) => {
     return null;
   };
 
-  // Custom tooltip for current reading
-  const CurrentTooltip = ({ active, payload, label }) => {
+  // BOLD Current tooltip
+  const CurrentTooltip = ({ active, payload }) => {
     if (active && payload && payload.length) {
       const data = payload[0].payload;
       return (
         <div style={{ 
-          backgroundColor: 'white', 
-          padding: '10px', 
-          border: '1px solid #ccc',
-          borderRadius: '4px',
-          boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+          backgroundColor: '#1a1a1a', 
+          padding: '12px 16px', 
+          border: '2px solid #2196F3',
+          borderRadius: '8px',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.3)'
         }}>
-          <p style={{ margin: 0, fontSize: '12px' }}><strong>Time:</strong> {data.fullTime}</p>
-          <p style={{ margin: 0, color: '#2196F3', fontSize: '12px' }}>
-            <strong>Current:</strong> {data.current.toFixed(2)} A
+          <p style={{ margin: 0, fontSize: '13px', fontWeight: 'bold', color: '#fff', marginBottom: '6px' }}>
+            📅 {data.fullTime}
+          </p>
+          <p style={{ margin: 0, color: '#2196F3', fontSize: '14px', fontWeight: 'bold' }}>
+            ⚡ Current: {data.current.toFixed(2)} A
           </p>
         </div>
       );
@@ -117,16 +123,80 @@ const DeviceChart = ({ device, onClose }) => {
     return null;
   };
 
-  // Calculate tick count based on data length and screen size
+  // Calculate tick count based on screen size
   const getTickCount = () => {
     const isMobile = window.innerWidth < 768;
     const dataLength = telemetryData.length;
     
     if (isMobile) {
-      return Math.min(4, dataLength); // Show fewer ticks on mobile
+      return Math.min(5, dataLength);
     } else {
-      return Math.min(8, dataLength); // Show more ticks on desktop
+      return Math.min(10, dataLength);
     }
+  };
+
+  // Custom tick component for BOLD labels
+  const CustomAxisTick = ({ x, y, payload }) => {
+    const lines = payload.value.split('\n');
+    
+    return (
+      <g transform={`translate(${x},${y})`}>
+        {lines.map((line, index) => (
+          <text
+            key={index}
+            x={0}
+            y={index * 16 + 10}
+            textAnchor="middle"
+            fill="#000"
+            fontSize="13px"
+            fontWeight="700"
+            fontFamily="Arial, sans-serif"
+          >
+            {line}
+          </text>
+        ))}
+      </g>
+    );
+  };
+
+  // Custom Y-axis tick for BOLD labels
+  const CustomYAxisTick = ({ x, y, payload }) => {
+    return (
+      <g transform={`translate(${x},${y})`}>
+        <text
+          x={-5}
+          y={0}
+          dy={4}
+          textAnchor="end"
+          fill="#000"
+          fontSize="13px"
+          fontWeight="700"
+          fontFamily="Arial, sans-serif"
+        >
+          {payload.value}
+        </text>
+      </g>
+    );
+  };
+
+  // Custom Y-axis tick for switch state
+  const CustomStateYAxisTick = ({ x, y, payload }) => {
+    return (
+      <g transform={`translate(${x},${y})`}>
+        <text
+          x={-5}
+          y={0}
+          dy={4}
+          textAnchor="end"
+          fill="#000"
+          fontSize="14px"
+          fontWeight="900"
+          fontFamily="Arial, sans-serif"
+        >
+          {payload.value === 1 ? 'ON' : 'OFF'}
+        </text>
+      </g>
+    );
   };
 
   return (
@@ -155,62 +225,72 @@ const DeviceChart = ({ device, onClose }) => {
           </div>
         ) : (
           <div className="chart-container">
-            <h4>Current Reading (A)</h4>
-            <ResponsiveContainer width="100%" height={300}>
+            <h4 style={{ fontSize: '18px', fontWeight: 'bold', color: '#2196F3', marginBottom: '15px' }}>
+              ⚡ Current Reading (A)
+            </h4>
+            <ResponsiveContainer width="100%" height={320}>
               <LineChart 
                 data={telemetryData}
-                margin={{ top: 5, right: 10, left: 0, bottom: 5 }}
+                margin={{ top: 10, right: 20, left: 10, bottom: 50 }}
               >
-                <CartesianGrid strokeDasharray="3 3" />
+                <CartesianGrid strokeDasharray="3 3" stroke="#ddd" strokeWidth={1.5} />
                 <XAxis 
                   dataKey="time"
-                  tick={{ fontSize: 10 }}
-                  angle={-45}
-                  textAnchor="end"
-                  height={60}
+                  tick={<CustomAxisTick />}
+                  height={70}
                   interval={Math.floor(telemetryData.length / getTickCount())}
+                  stroke="#000"
+                  strokeWidth={2}
                 />
-                <YAxis tick={{ fontSize: 12 }} width={40} />
+                <YAxis 
+                  tick={<CustomYAxisTick />}
+                  width={50}
+                  stroke="#000"
+                  strokeWidth={2}
+                />
                 <Tooltip content={<CurrentTooltip />} />
                 <Line 
                   type="monotone" 
                   dataKey="current" 
                   stroke="#2196F3" 
-                  strokeWidth={2}
+                  strokeWidth={3}
                   dot={false}
                   isAnimationActive={false}
                 />
               </LineChart>
             </ResponsiveContainer>
 
-            <h4>Switch State</h4>
-            <ResponsiveContainer width="100%" height={200}>
+            <h4 style={{ fontSize: '18px', fontWeight: 'bold', color: '#4CAF50', marginTop: '30px', marginBottom: '15px' }}>
+              🔌 Switch State
+            </h4>
+            <ResponsiveContainer width="100%" height={250}>
               <LineChart 
                 data={telemetryData}
-                margin={{ top: 5, right: 10, left: 0, bottom: 5 }}
+                margin={{ top: 10, right: 20, left: 10, bottom: 50 }}
               >
-                <CartesianGrid strokeDasharray="3 3" />
+                <CartesianGrid strokeDasharray="3 3" stroke="#ddd" strokeWidth={1.5} />
                 <XAxis 
                   dataKey="time"
-                  tick={{ fontSize: 10 }}
-                  angle={-45}
-                  textAnchor="end"
-                  height={60}
+                  tick={<CustomAxisTick />}
+                  height={70}
                   interval={Math.floor(telemetryData.length / getTickCount())}
+                  stroke="#000"
+                  strokeWidth={2}
                 />
                 <YAxis 
                   domain={[0, 1]} 
                   ticks={[0, 1]}
-                  tickFormatter={(value) => value === 1 ? 'ON' : 'OFF'}
-                  tick={{ fontSize: 12 }}
-                  width={40}
+                  tick={<CustomStateYAxisTick />}
+                  width={50}
+                  stroke="#000"
+                  strokeWidth={2}
                 />
                 <Tooltip content={<CustomTooltip />} />
                 <Line 
                   type="stepAfter" 
                   dataKey="state" 
                   stroke="#4CAF50" 
-                  strokeWidth={2}
+                  strokeWidth={4}
                   dot={false}
                   isAnimationActive={false}
                 />
