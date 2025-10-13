@@ -1,3 +1,6 @@
+// REPLACE your entire DeviceChart.js with this BOLD & CLEAR version
+// Location: smart-switch-frontend/src/components/DeviceChart.js
+
 import React, { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { API_BASE_URL } from '../config';
@@ -37,6 +40,27 @@ const DeviceChart = ({ device, onClose }) => {
     }
   };
 
+  // Smart data sampling for better performance
+  const sampleData = (data, maxPoints) => {
+    if (data.length <= maxPoints) {
+      return data;
+    }
+    
+    const step = Math.ceil(data.length / maxPoints);
+    const sampled = [];
+    
+    for (let i = 0; i < data.length; i += step) {
+      sampled.push(data[i]);
+    }
+    
+    // Always include the last point
+    if (sampled[sampled.length - 1] !== data[data.length - 1]) {
+      sampled.push(data[data.length - 1]);
+    }
+    
+    return sampled;
+  };
+
   const fetchTelemetry = async () => {
     setLoading(true);
     try {
@@ -51,6 +75,7 @@ const DeviceChart = ({ device, onClose }) => {
         const data = await response.json();
         const hoursInt = parseInt(timeRange, 10);
         
+        // Format all data first
         const formattedData = data.map(item => ({
           time: formatTimeForRange(item.timestamp, hoursInt),
           fullTime: new Date(item.timestamp).toLocaleString('en-US', { 
@@ -67,7 +92,25 @@ const DeviceChart = ({ device, onClose }) => {
           stateText: item.switch_state ? 'ON' : 'OFF'
         }));
         
-        setTelemetryData(formattedData.reverse());
+        // Reverse to get chronological order
+        const chronologicalData = formattedData.reverse();
+        
+        // Sample data based on time range for better performance
+        let maxPoints;
+        if (hoursInt <= 1) {
+          maxPoints = 360;      // 1 hour: show all points
+        } else if (hoursInt <= 6) {
+          maxPoints = 500;      // 6 hours: ~500 points
+        } else if (hoursInt <= 24) {
+          maxPoints = 600;      // 24 hours: ~600 points
+        } else {
+          maxPoints = 800;      // 1 week: ~800 points (much faster!)
+        }
+        
+        const sampledData = sampleData(chronologicalData, maxPoints);
+        console.log(`Showing ${sampledData.length} points out of ${chronologicalData.length} total points`);
+        
+        setTelemetryData(sampledData);
       }
     } catch (error) {
       console.error('Error fetching telemetry:', error);
@@ -215,6 +258,16 @@ const DeviceChart = ({ device, onClose }) => {
             <option value="24">Last 24 Hours</option>
             <option value="168">Last Week</option>
           </select>
+          {telemetryData.length > 0 && (
+            <span style={{ 
+              marginLeft: '15px', 
+              fontSize: '12px', 
+              color: '#666',
+              fontWeight: '500'
+            }}>
+              📊 {telemetryData.length} data points
+            </span>
+          )}
         </div>
 
         {loading ? (
