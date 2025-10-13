@@ -91,7 +91,7 @@ const DeviceChart = ({ device, onClose }) => {
             📅 {data.fullTime}
           </p>
           <p style={{ margin: 0, color: '#4CAF50', fontSize: '14px', fontWeight: 'bold' }}>
-            ⚡ State: {data.stateText}
+            State: {data.stateText}
           </p>
         </div>
       );
@@ -261,7 +261,7 @@ const DeviceChart = ({ device, onClose }) => {
             </ResponsiveContainer>
 
             <h4 style={{ fontSize: '18px', fontWeight: 'bold', color: '#4CAF50', marginTop: '30px', marginBottom: '15px' }}>
-              🔌 Switch State
+              Switch State
             </h4>
             <ResponsiveContainer width="100%" height={250}>
               <LineChart 
