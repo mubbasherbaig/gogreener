@@ -11,7 +11,39 @@ const DeviceChart = ({ device, onClose }) => {
     fetchTelemetry();
   }, [device.id, timeRange]);
 
+  // Format time based on selected range
+  const formatTimeForRange = (timestamp, hours) => {
+    const date = new Date(timestamp);
+    
+    if (hours <= 6) {
+      // For short ranges (1-6 hours): show only time
+      return date.toLocaleTimeString('en-US', { 
+        hour: '2-digit', 
+        minute: '2-digit',
+        hour12: false 
+      });
+    } else if (hours <= 24) {
+      // For 24 hours: show date + time
+      return date.toLocaleString('en-US', { 
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit', 
+        minute: '2-digit',
+        hour12: false 
+      });
+    } else {
+      // For week: show date + time (more compact)
+      return date.toLocaleString('en-US', { 
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        hour12: false 
+      });
+    }
+  };
+
   const fetchTelemetry = async () => {
+    setLoading(true);
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(`${API_BASE_URL}/api/devices/${device.id}/telemetry?hours=${timeRange}`, {
@@ -22,15 +54,17 @@ const DeviceChart = ({ device, onClose }) => {
       
       if (response.ok) {
         const data = await response.json();
+        const hoursInt = parseInt(timeRange, 10);
+        
         const formattedData = data.map(item => ({
-          time: new Date(item.timestamp).toLocaleTimeString(),
+          time: formatTimeForRange(item.timestamp, hoursInt),
+          fullTime: new Date(item.timestamp).toLocaleString(), // For tooltip
           current: parseFloat(item.current_reading) || 0,
           voltage: parseFloat(item.voltage) || 0,
-          // FIX: Use numeric values (0 or 1) instead of strings
           state: item.switch_state ? 1 : 0,
-          // Keep the original boolean for tooltip display
           stateText: item.switch_state ? 'ON' : 'OFF'
         }));
+        
         setTelemetryData(formattedData.reverse());
       }
     } catch (error) {
@@ -39,7 +73,7 @@ const DeviceChart = ({ device, onClose }) => {
     setLoading(false);
   };
 
-  // Custom tooltip component for better state display
+  // Custom tooltip for better display
   const CustomTooltip = ({ active, payload, label }) => {
     if (active && payload && payload.length) {
       const data = payload[0].payload;
@@ -51,8 +85,8 @@ const DeviceChart = ({ device, onClose }) => {
           borderRadius: '4px',
           boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
         }}>
-          <p style={{ margin: 0 }}><strong>Time:</strong> {label}</p>
-          <p style={{ margin: 0, color: payload[0].color }}>
+          <p style={{ margin: 0, fontSize: '12px' }}><strong>Time:</strong> {data.fullTime}</p>
+          <p style={{ margin: 0, color: payload[0].color, fontSize: '12px' }}>
             <strong>State:</strong> {data.stateText}
           </p>
         </div>
@@ -61,11 +95,45 @@ const DeviceChart = ({ device, onClose }) => {
     return null;
   };
 
+  // Custom tooltip for current reading
+  const CurrentTooltip = ({ active, payload, label }) => {
+    if (active && payload && payload.length) {
+      const data = payload[0].payload;
+      return (
+        <div style={{ 
+          backgroundColor: 'white', 
+          padding: '10px', 
+          border: '1px solid #ccc',
+          borderRadius: '4px',
+          boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+        }}>
+          <p style={{ margin: 0, fontSize: '12px' }}><strong>Time:</strong> {data.fullTime}</p>
+          <p style={{ margin: 0, color: '#2196F3', fontSize: '12px' }}>
+            <strong>Current:</strong> {data.current.toFixed(2)} A
+          </p>
+        </div>
+      );
+    }
+    return null;
+  };
+
+  // Calculate tick count based on data length and screen size
+  const getTickCount = () => {
+    const isMobile = window.innerWidth < 768;
+    const dataLength = telemetryData.length;
+    
+    if (isMobile) {
+      return Math.min(4, dataLength); // Show fewer ticks on mobile
+    } else {
+      return Math.min(8, dataLength); // Show more ticks on desktop
+    }
+  };
+
   return (
-    <div className="modal-overlay">
-      <div className="chart-modal">
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="chart-modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h3>{device.name} - Telemetry Data</h3>
+          <h3>{device.name} - Telemetry</h3>
           <button className="close-btn" onClick={onClose}>×</button>
         </div>
 
@@ -89,41 +157,62 @@ const DeviceChart = ({ device, onClose }) => {
           <div className="chart-container">
             <h4>Current Reading (A)</h4>
             <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={telemetryData}>
+              <LineChart 
+                data={telemetryData}
+                margin={{ top: 5, right: 10, left: 0, bottom: 5 }}
+              >
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="time" />
-                <YAxis />
-                <Tooltip 
-                  formatter={(value) => [value.toFixed(2) + ' A', 'Current']}
-                  labelStyle={{ color: '#333' }}
+                <XAxis 
+                  dataKey="time"
+                  tick={{ fontSize: 10 }}
+                  angle={-45}
+                  textAnchor="end"
+                  height={60}
+                  interval={Math.floor(telemetryData.length / getTickCount())}
                 />
+                <YAxis tick={{ fontSize: 12 }} width={40} />
+                <Tooltip content={<CurrentTooltip />} />
                 <Line 
                   type="monotone" 
                   dataKey="current" 
                   stroke="#2196F3" 
                   strokeWidth={2}
-                  dot={{ r: 2 }}
+                  dot={false}
+                  isAnimationActive={false}
                 />
               </LineChart>
             </ResponsiveContainer>
 
             <h4>Switch State</h4>
             <ResponsiveContainer width="100%" height={200}>
-              <LineChart data={telemetryData}>
+              <LineChart 
+                data={telemetryData}
+                margin={{ top: 5, right: 10, left: 0, bottom: 5 }}
+              >
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="time" />
+                <XAxis 
+                  dataKey="time"
+                  tick={{ fontSize: 10 }}
+                  angle={-45}
+                  textAnchor="end"
+                  height={60}
+                  interval={Math.floor(telemetryData.length / getTickCount())}
+                />
                 <YAxis 
                   domain={[0, 1]} 
                   ticks={[0, 1]}
                   tickFormatter={(value) => value === 1 ? 'ON' : 'OFF'}
+                  tick={{ fontSize: 12 }}
+                  width={40}
                 />
                 <Tooltip content={<CustomTooltip />} />
                 <Line 
                   type="stepAfter" 
                   dataKey="state" 
                   stroke="#4CAF50" 
-                  strokeWidth={3}
-                  dot={{ r: 4 }}
+                  strokeWidth={2}
+                  dot={false}
+                  isAnimationActive={false}
                 />
               </LineChart>
             </ResponsiveContainer>

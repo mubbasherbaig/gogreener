@@ -982,44 +982,6 @@ input:checked + .slider:after {
   font-size: clamp(14px, 3.5vw, 16px);
 }
 
-/* CHART RESPONSIVE */
-.chart-controls {
-  padding: clamp(10px, 3vw, 15px);
-  border-bottom: 1px solid #e2e8f0;
-  display: flex;
-  align-items: center;
-  gap: clamp(8px, 2.5vw, 12px);
-  font-size: clamp(12px, 3vw, 14px);
-  font-weight: 500;
-  color: #2d3748;
-  flex-wrap: wrap;
-}
-
-.chart-controls select {
-  padding: clamp(4px, 1.5vw, 6px) clamp(8px, 2.5vw, 12px);
-  border-radius: 6px;
-  border: 1px solid #cbd5e1;
-  background: white;
-  cursor: pointer;
-  font-size: clamp(12px, 3vw, 14px);
-  transition: all 0.2s ease;
-  touch-action: manipulation;
-}
-
-.chart-container {
-  width: 100%;
-  height: clamp(250px, 50vw, 400px);
-  margin: 0 auto;
-  padding: clamp(10px, 3vw, 20px);
-}
-
-.chart-container h4 {
-  margin-bottom: 10px;
-  font-size: clamp(14px, 3.5vw, 16px);
-  font-weight: 500;
-  color: #2d3748;
-}
-
 /* Mobile-specific overrides */
 @media (max-width: 768px) {
   /* Further reduce logo on very small screens */
@@ -1613,4 +1575,163 @@ input:checked + .toggle-slider:before {
 .schedule-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* ADD these styles to your App.css file (or whichever CSS file you're using) */
+
+/* CHART MODAL - FULLY RESPONSIVE */
+.chart-modal {
+  background: white;
+  border-radius: 12px;
+  width: 90%;
+  max-width: 900px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+}
+
+/* Mobile optimizations */
+@media (max-width: 768px) {
+  .chart-modal {
+    width: 95%;
+    max-width: 95vw;
+    max-height: 85vh;
+    border-radius: 8px;
+  }
+
+  .modal-header {
+    padding: 12px 15px;
+  }
+
+  .modal-header h3 {
+    font-size: 16px;
+  }
+
+  .close-btn {
+    font-size: 28px;
+    width: 36px;
+    height: 36px;
+  }
+
+  .chart-controls {
+    padding: 10px 15px;
+    flex-direction: row;
+    justify-content: space-between;
+  }
+
+  .chart-controls label {
+    font-size: 13px;
+  }
+
+  .chart-controls select {
+    font-size: 13px;
+    padding: 6px 10px;
+  }
+
+  .chart-container {
+    padding: 10px 15px;
+  }
+
+  .chart-container h4 {
+    font-size: 14px;
+    margin-bottom: 8px;
+  }
+
+  /* Make charts scrollable horizontally on small screens if needed */
+  .chart-container .recharts-wrapper {
+    min-width: 100%;
+  }
+}
+
+/* Extra small screens */
+@media (max-width: 480px) {
+  .chart-modal {
+    width: 98%;
+    max-height: 80vh;
+    border-radius: 6px;
+  }
+
+  .modal-header {
+    padding: 10px 12px;
+  }
+
+  .modal-header h3 {
+    font-size: 14px;
+  }
+
+  .close-btn {
+    font-size: 24px;
+    width: 32px;
+    height: 32px;
+  }
+
+  .chart-controls {
+    padding: 8px 12px;
+    gap: 8px;
+  }
+
+  .chart-controls label {
+    font-size: 12px;
+  }
+
+  .chart-controls select {
+    font-size: 12px;
+    padding: 5px 8px;
+    flex: 1;
+    min-width: 120px;
+  }
+
+  .chart-container {
+    padding: 8px 12px;
+  }
+
+  .chart-container h4 {
+    font-size: 13px;
+    margin-bottom: 6px;
+  }
+}
+
+/* Landscape mode on mobile */
+@media (max-width: 896px) and (orientation: landscape) {
+  .chart-modal {
+    max-height: 95vh;
+    overflow-y: auto;
+  }
+
+  .chart-container {
+    padding: 8px 15px;
+  }
+
+  /* Reduce chart heights in landscape */
+  .chart-container .recharts-wrapper {
+    max-height: 200px;
+  }
+}
+
+/* Touch improvements for chart buttons */
+@media (hover: none) and (pointer: coarse) {
+  .chart-controls select {
+    min-height: 40px;
+    font-size: 14px;
+  }
+}
+
+/* Ensure modal overlay works on all devices */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+  padding: 10px;
+}
+
+/* Prevent body scroll when modal is open */
+body.modal-open {
+  overflow: hidden;
 }
