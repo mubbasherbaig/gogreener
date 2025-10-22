@@ -230,6 +230,10 @@ wss.on('connection', (ws, req) => {
       }
     }
   });
+  ws.on('pong', () => {
+      ws.isAlive = true;
+      console.log(`Pong received from client`);  // Optional: For debugging
+  });
 });
 
 function getNextScheduleTime(schedules) {
@@ -1456,6 +1460,24 @@ async function verifyAndCorrectDeviceState(deviceId, actualSwitchState) {
     console.error(`Error verifying device state for ${deviceId}:`, error);
   }
 }
+
+const wsHealthCheck = setInterval(() => {
+  wss.clients.forEach((ws) => {
+    if (ws.isAlive === false) {
+      console.log('Terminating dead connection');
+      // Update device status to offline
+      const deviceId = ws.deviceId;
+      if (deviceId && connectedDevices.has(deviceId)) {
+        connectedDevices.delete(deviceId);
+        updateDeviceStatus(deviceId, false);
+      }
+      return ws.terminate();
+    }
+    
+    ws.isAlive = false;
+    ws.ping();
+  });
+}, 10000);
 
 // Start HTTP server with WebSocket support
 server.listen(PORT, () => {
