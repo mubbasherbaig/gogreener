@@ -142,6 +142,7 @@ const requireAdmin = (req, res, next) => {
 // REPLACE your existing WebSocket handler with this enhanced version
 
 wss.on('connection', (ws, req) => {
+  ws.isAlive = true;
   ws.on('message', async (data) => {
     try {
       const message = JSON.parse(data.toString());
@@ -1465,19 +1466,21 @@ const wsHealthCheck = setInterval(() => {
   wss.clients.forEach((ws) => {
     if (ws.isAlive === false) {
       console.log('Terminating dead connection');
-      // Update device status to offline
-      const deviceId = ws.deviceId;
-      if (deviceId && deviceConnections.has(deviceId)) {
-        connectedDevices.delete(deviceId);
-        updateDeviceStatus(deviceId, false);
+      
+      // FIXED: Use correct Map name
+      const deviceId = ws.deviceId || 'unknown';
+      if (deviceConnections.has(deviceId)) {
+        deviceConnections.delete(deviceId);
+        broadcastDeviceStatus(deviceId, false);
       }
-      return ws.terminate();
+      
+      ws.terminate();
     }
     
     ws.isAlive = false;
     ws.ping();
   });
-}, 10000);
+}, 30000);  // 30 seconds - gentler
 
 // Start HTTP server with WebSocket support
 server.listen(PORT, () => {
