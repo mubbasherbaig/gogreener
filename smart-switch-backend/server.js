@@ -1467,14 +1467,14 @@ const wsHealthCheck = setInterval(() => {
     if (ws.isAlive === false) {
       console.log('Terminating dead connection');
       
-      // FIXED: Use correct Map name
-      const deviceId = ws.deviceId || 'unknown';
-      if (deviceConnections.has(deviceId)) {
-        deviceConnections.delete(deviceId);
-        broadcastDeviceStatus(deviceId, false);
+      // FIXED: Find deviceId from Map
+      let deviceId = 'unknown';
+      for (let [id, conn] of deviceConnections.entries()) {
+        if (conn === ws) {
+          deviceId = id;
+          break;
+        }
       }
-      
-      ws.terminate();
     }
     
     ws.isAlive = false;

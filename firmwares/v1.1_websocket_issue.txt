@@ -1,0 +1,1050 @@
+#include <ESP8266WiFi.h>
+#include <WebSocketsClient.h>
+#include <ArduinoJson.h>
+#include <EEPROM.h>
+#include <ESP8266WebServer.h>
+#include <WiFiClientSecure.h>
+#include <WiFiUDP.h>
+#include <NTPClient.h>
+#include <RTClib.h>
+#include <Wire.h>
+#include <Ticker.h>
+
+// Pin definitions
+#define SWITCH_PIN D5
+#define SDA_PIN D7
+#define SCL_PIN D6
+#define LED_BUILTIN 2
+#define SETUP_BUTTON 0
+
+// EEPROM addresses
+#define WIFI_SSID_ADDR 0
+#define WIFI_PASS_ADDR 64
+#define SWITCH_STATE_ADDR 128
+#define LAST_TIME_ADDR 130
+#define SCHEDULES_START_ADDR 200
+#define MAX_SCHEDULES 7
+#define SCHEDULE_SIZE 40
+#define EEPROM_SIZE 512
+
+// Timing
+#define HEARTBEAT_INTERVAL 10000
+#define WS_FAIL_TIMEOUT 10000
+#define WIFI_FAIL_TIMEOUT 30000         // Start cyclic mode after 30 sec
+#define CYCLIC_CONNECT_TIME 20000       // Try connect for 30 sec
+#define CYCLIC_AP_TIME 40000            // Serve AP for 30 sec
+#define DHCP_RENEWAL_INTERVAL 21600000  // 6 hours
+#define MEMORY_CHECK_INTERVAL 60000     // Check memory every minute
+#define MIN_HEAP_SIZE 8000              // Restart if heap below 8KB
+#define WATCHDOG_TIMEOUT 60000          // Reset if loop blocks > 60 sec
+
+// Device config
+String deviceId = "ESP8266_" + String(ESP.getChipId(), HEX);
+const char* serverHost = "gogreener.onrender.com";
+const int serverPort = 443;
+
+// WebSocket & WiFi
+WebSocketsClient webSocket;
+WiFiClientSecure wifiClientSecure;
+ESP8266WebServer server(80);
+bool websocketConnected = false;
+bool serverRunning = false;
+
+// State management
+enum DeviceState {
+  STATE_NORMAL,
+  STATE_CYCLIC_CONNECTING,
+  STATE_CYCLIC_AP,
+  STATE_PROVISIONING
+};
+DeviceState currentState = STATE_NORMAL;
+unsigned long stateChangeTime = 0;
+unsigned long lastDHCPRenewal = 0;
+unsigned long lastMemoryCheck = 0;
+unsigned long lastWatchdog = 0;
+unsigned long wifiLostTime = 0;
+
+// Ticker for non-blocking operations
+Ticker wifiReconnectTicker;
+Ticker memoryMonitor;
+
+// RTC
+RTC_DS1307 rtc;
+bool rtcAvailable = false;
+
+// Time
+WiFiUDP ntpUDP;
+NTPClient timeClient(ntpUDP, "pool.ntp.org", 18000, 60000);
+bool timeInitialized = false;
+uint32_t lastKnownTime = 0;
+unsigned long lastScheduleCheck = 0;
+int lastCheckedDay = -1;
+int lastCheckedHour = -1;
+int lastCheckedMinute = -1;
+
+// State
+bool switchState = false;
+float currentReading = 0.0;
+unsigned long lastHeartbeat = 0;
+
+// WiFi credentials cache
+String cachedSSID = "";
+String cachedPass = "";
+
+// Schedule structure
+struct Schedule {
+  bool enabled;
+  bool action;
+  uint8_t days;
+  uint8_t hour;
+  uint8_t minute;
+  uint8_t id;
+  char name[20];
+  uint8_t repeat_type;
+  uint32_t lastTriggered;
+};
+
+// ============================================
+// MEMORY & WATCHDOG MANAGEMENT
+// ============================================
+
+void checkMemoryHealth() {
+  uint32_t freeHeap = ESP.getFreeHeap();
+  uint32_t heapFragmentation = ESP.getHeapFragmentation();
+
+  if (freeHeap < MIN_HEAP_SIZE) {
+    Serial.printf("[CRITICAL] Low memory: %d bytes, Frag: %d%% - Restarting...\n",
+                  freeHeap, heapFragmentation);
+    delay(1000);
+    ESP.restart();
+  }
+
+  // Log memory status every minute
+  if (millis() - lastMemoryCheck > MEMORY_CHECK_INTERVAL) {
+    lastMemoryCheck = millis();
+    Serial.printf("[MEM] Free: %d bytes, Frag: %d%%\n", freeHeap, heapFragmentation);
+  }
+}
+
+void resetWatchdog() {
+  lastWatchdog = millis();
+  ESP.wdtFeed();  // Feed hardware watchdog
+}
+
+void checkWatchdog() {
+  if (millis() - lastWatchdog > WATCHDOG_TIMEOUT) {
+    Serial.println("[WDT] Watchdog timeout - Restarting...");
+    ESP.restart();
+  }
+}
+
+// ============================================
+// SETUP
+// ============================================
+
+void setup() {
+  Serial.begin(115200);
+  delay(1000);
+  Serial.println("\n=== ESP8266 Smart Switch V2.0 ===");
+  Serial.printf("Device ID: %s\n", deviceId.c_str());
+  Serial.printf("Free Heap: %d bytes\n", ESP.getFreeHeap());
+
+  // Enable hardware watchdog
+  ESP.wdtEnable(WATCHDOG_TIMEOUT);
+
+  pinMode(SWITCH_PIN, OUTPUT);
+  pinMode(LED_BUILTIN, OUTPUT);
+  pinMode(SETUP_BUTTON, INPUT_PULLUP);
+  digitalWrite(SWITCH_PIN, LOW);
+
+  EEPROM.begin(EEPROM_SIZE);
+  Wire.begin(SDA_PIN, SCL_PIN);
+
+  // Load cached credentials
+  loadWiFiCredentialsStrings(cachedSSID, cachedPass);
+
+  lastKnownTime = loadLastTime();
+  switchState = loadSwitchState();
+  digitalWrite(SWITCH_PIN, switchState ? HIGH : LOW);
+
+  setupRTC();
+
+  // Set WiFi to auto-reconnect
+  WiFi.setAutoReconnect(true);
+  WiFi.persistent(false);  // Don't save WiFi config to flash (saves flash writes)
+
+  // Start memory monitor
+  memoryMonitor.attach(10, checkMemoryHealth);
+
+  if (digitalRead(SETUP_BUTTON) == LOW || cachedSSID.length() == 0) {
+    startProvisioning();
+  } else {
+    startNormalMode();
+  }
+
+  Serial.println("=== READY ===\n");
+}
+
+// ============================================
+// MAIN LOOP
+// ============================================
+
+void loop() {
+  resetWatchdog();  // Keep watchdog happy
+
+  switch (currentState) {
+    case STATE_NORMAL:
+      handleNormalMode();
+      break;
+
+    case STATE_CYCLIC_CONNECTING:
+      handleCyclicConnecting();
+      break;
+
+    case STATE_CYCLIC_AP:
+      handleCyclicAP();
+      break;
+
+    case STATE_PROVISIONING:
+      handleProvisioning();
+      break;
+  }
+
+  checkSchedules();
+  handleSerialCommands();
+  checkWatchdog();
+
+  // LED blink
+  static unsigned long lastBlink = 0;
+  static bool ledState = false;
+  if (millis() - lastBlink >= (websocketConnected ? 2000 : 500)) {
+    ledState = !ledState;
+    digitalWrite(LED_BUILTIN, ledState);
+    lastBlink = millis();
+  }
+
+  delay(10);  // Small delay for WiFi stack
+}
+
+// ============================================
+// STATE HANDLERS
+// ============================================
+
+void setState(DeviceState newState) {
+  if (currentState != newState) {
+    currentState = newState;
+    stateChangeTime = millis();
+    Serial.printf("[STATE] Changed to: %d\n", newState);
+  }
+}
+
+void startNormalMode() {
+  setState(STATE_NORMAL);
+  WiFi.mode(WIFI_STA);
+  if (cachedSSID.length() > 0) {
+    Serial.printf("Connecting to WiFi: %s\n", cachedSSID.c_str());
+    WiFi.begin(cachedSSID.c_str(), cachedPass.c_str());
+
+    // Wait up to 15 seconds
+    int attempts = 0;
+    while (WiFi.status() != WL_CONNECTED && attempts < 30) {
+      delay(500);
+      Serial.print(".");
+      attempts++;
+    }
+    Serial.println();
+
+    if (WiFi.status() == WL_CONNECTED) {
+      onWiFiConnected();
+    } else {
+      Serial.println("Failed to connect - Starting cyclic mode");
+      wifiLostTime = millis();
+    }
+  }
+}
+
+void handleNormalMode() {
+  webSocket.loop();
+
+  // Check WiFi status
+  if (WiFi.status() != WL_CONNECTED) {
+    if (wifiLostTime == 0) {
+      wifiLostTime = millis();
+      Serial.println("[WiFi] Connection lost");
+      websocketConnected = false;
+      webSocket.disconnect();
+    }
+
+    // After 30 seconds of no WiFi, start cyclic mode
+    if (millis() - wifiLostTime > WIFI_FAIL_TIMEOUT) {
+      startCyclicMode();
+    }
+  } else {
+    if (wifiLostTime > 0) {
+      wifiLostTime = 0;
+      onWiFiConnected();
+    }
+
+    // Force DHCP renewal
+    if (millis() - lastDHCPRenewal > DHCP_RENEWAL_INTERVAL) {
+      renewDHCP();
+    }
+
+    // Handle WebSocket
+    if (!websocketConnected) {
+      static unsigned long lastWSAttempt = 0;
+      if (millis() - lastWSAttempt > 15000) {  // Increased to 15 seconds
+        lastWSAttempt = millis();
+        Serial.println("[WS] Attempting reconnection...");
+        connectWebSocket();
+      }
+    } else {
+      if (millis() - lastHeartbeat > HEARTBEAT_INTERVAL) {
+        sendHeartbeat();
+        lastHeartbeat = millis();
+      }
+    }
+  }
+}
+
+void startCyclicMode() {
+  Serial.println("[CYCLIC] Starting cyclic mode");
+  setState(STATE_CYCLIC_CONNECTING);
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(cachedSSID.c_str(), cachedPass.c_str());
+}
+
+void handleCyclicConnecting() {
+  // Try connecting for 30 seconds
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("[CYCLIC] Connected!");
+    setState(STATE_NORMAL);
+    onWiFiConnected();
+    return;
+  }
+
+  if (millis() - stateChangeTime > CYCLIC_CONNECT_TIME) {
+    Serial.println("[CYCLIC] Connect timeout - Starting AP");
+    setState(STATE_CYCLIC_AP);
+    startCyclicAP();
+  }
+}
+
+void startCyclicAP() {
+  WiFi.mode(WIFI_AP_STA);  // Keep trying to connect while serving AP
+  WiFi.softAP("ESP_" + deviceId.substring(7), "12345678");
+  Serial.printf("[AP] Started: ESP_%s\n", deviceId.substring(7).c_str());
+
+  if (!serverRunning) {
+    setupWebServer();
+    server.begin();
+    serverRunning = true;
+  }
+}
+
+void handleCyclicAP() {
+  server.handleClient();
+
+  // Check if connected in background
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("[CYCLIC] Connected while in AP mode!");
+    stopAP();
+    setState(STATE_NORMAL);
+    onWiFiConnected();
+    return;
+  }
+
+  // After 30 seconds, go back to trying to connect
+  if (millis() - stateChangeTime > CYCLIC_AP_TIME) {
+    Serial.println("[CYCLIC] AP timeout - Trying to connect again");
+    stopAP();
+    setState(STATE_CYCLIC_CONNECTING);
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(cachedSSID.c_str(), cachedPass.c_str());
+  }
+}
+
+void stopAP() {
+  if (serverRunning) {
+    server.stop();
+    serverRunning = false;
+  }
+  WiFi.softAPdisconnect(true);
+}
+
+void startProvisioning() {
+  setState(STATE_PROVISIONING);
+  WiFi.mode(WIFI_AP);
+  WiFi.softAP("ESP_" + deviceId.substring(7), "12345678");
+  Serial.printf("[PROVISION] AP Started: ESP_%s\n", deviceId.substring(7).c_str());
+  setupWebServer();
+  server.begin();
+  serverRunning = true;
+}
+
+void handleProvisioning() {
+  server.handleClient();
+}
+
+// ============================================
+// WIFI MANAGEMENT
+// ============================================
+
+void onWiFiConnected() {
+  Serial.printf("[WiFi] Connected! IP: %s\n", WiFi.localIP().toString().c_str());
+  lastDHCPRenewal = millis();
+  wifiLostTime = 0;
+
+  initializeTime();
+
+  // Try WebSocket connection after a delay
+  delay(2000);
+  connectWebSocket();
+}
+
+void renewDHCP() {
+  Serial.println("[DHCP] Renewing lease...");
+  lastDHCPRenewal = millis();
+
+  WiFi.disconnect(false);  // Disconnect but keep settings
+  delay(100);
+  WiFi.begin(cachedSSID.c_str(), cachedPass.c_str());
+
+  int attempts = 0;
+  while (WiFi.status() != WL_CONNECTED && attempts < 30) {
+    delay(500);
+    attempts++;
+  }
+
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.printf("[DHCP] Renewed! IP: %s\n", WiFi.localIP().toString().c_str());
+  } else {
+    Serial.println("[DHCP] Renewal failed");
+    wifiLostTime = millis();
+  }
+}
+
+// ============================================
+// RTC & TIME
+// ============================================
+
+void setupRTC() {
+  if (rtc.begin()) {
+    rtcAvailable = true;
+    Serial.println("[RTC] Found");
+
+    if (!rtc.isrunning()) {
+      Serial.println("[RTC] Starting...");
+      if (lastKnownTime > 0) {
+        rtc.adjust(DateTime(lastKnownTime));
+      } else {
+        rtc.adjust(DateTime(2025, 1, 1, 0, 0, 0));
+      }
+    }
+
+    DateTime now = rtc.now();
+    if (now.year() >= 2020 && now.year() <= 2030) {
+      timeInitialized = true;
+      lastKnownTime = now.unixtime();
+      saveLastTime(lastKnownTime);
+    }
+  } else {
+    Serial.println("[RTC] Not found");
+    rtcAvailable = false;
+  }
+}
+
+void initializeTime() {
+  if (WiFi.status() != WL_CONNECTED) return;
+
+  Serial.println("[NTP] Syncing...");
+  timeClient.begin();
+  timeClient.setTimeOffset(18000);
+
+  for (int i = 0; i < 3; i++) {
+    if (timeClient.update()) {
+      DateTime ntpTime = DateTime(timeClient.getEpochTime());
+      lastKnownTime = ntpTime.unixtime();
+      saveLastTime(lastKnownTime);
+
+      if (rtcAvailable) {
+        rtc.adjust(ntpTime);
+        Serial.println("[RTC] Synced with NTP");
+      }
+
+      timeInitialized = true;
+      break;
+    }
+    delay(1000);
+  }
+}
+
+// ============================================
+// SCHEDULES (UNCHANGED)
+// ============================================
+
+void checkSchedules() {
+  if (!timeInitialized) return;
+
+  unsigned long now = millis();
+  if (now - lastScheduleCheck < 1000) return;
+  lastScheduleCheck = now;
+
+  DateTime currentTime;
+  bool timeValid = false;
+
+  if (rtcAvailable && rtc.isrunning()) {
+    currentTime = rtc.now();
+    if (currentTime.year() >= 2020 && currentTime.year() <= 2030) {
+      timeValid = true;
+      lastKnownTime = currentTime.unixtime();
+      saveLastTime(lastKnownTime);
+    }
+  }
+
+  if (!timeValid && WiFi.status() == WL_CONNECTED && timeClient.isTimeSet()) {
+    timeClient.update();
+    currentTime = DateTime(timeClient.getEpochTime());
+    timeValid = true;
+    if (rtcAvailable) rtc.adjust(currentTime);
+  }
+
+  if (!timeValid) return;
+
+  int hour = currentTime.hour();
+  int minute = currentTime.minute();
+  int dayOfWeek = currentTime.dayOfTheWeek();
+  int dayOfMonth = currentTime.day();
+
+  if (dayOfMonth != lastCheckedDay) {
+    lastCheckedDay = dayOfMonth;
+    lastCheckedHour = -1;
+    lastCheckedMinute = -1;
+  }
+
+  if (hour == lastCheckedHour && minute == lastCheckedMinute) {
+    return;
+  }
+
+  lastCheckedHour = hour;
+  lastCheckedMinute = minute;
+
+  for (int i = 0; i < MAX_SCHEDULES; i++) {
+    Schedule s = loadSchedule(i);
+
+    if (!s.enabled) continue;
+    if (s.hour == 0 && s.minute == 0 && s.days == 0) continue;
+
+    if (!(s.days & (1 << dayOfWeek))) continue;
+
+    if (s.hour != hour || s.minute != minute) continue;
+
+    Serial.printf("[SCHEDULE] Trigger: %s -> %s\n", s.name, s.action ? "ON" : "OFF");
+
+    setSwitchState(s.action, false);
+    s.lastTriggered = currentTime.unixtime();
+    saveSchedule(i, s);
+    sendScheduleNotification(i, s);
+  }
+}
+
+Schedule loadSchedule(int index) {
+  Schedule s;
+  memset(&s, 0, sizeof(Schedule));
+
+  if (index < 0 || index >= MAX_SCHEDULES) return s;
+
+  uint16_t addr = SCHEDULES_START_ADDR + (index * SCHEDULE_SIZE);
+
+  s.enabled = EEPROM.read(addr) == 1;
+  s.action = EEPROM.read(addr + 1) == 1;
+  s.days = EEPROM.read(addr + 2);
+  s.hour = EEPROM.read(addr + 3);
+  s.minute = EEPROM.read(addr + 4);
+  s.id = EEPROM.read(addr + 5);
+
+  for (int i = 0; i < 20; i++) {
+    s.name[i] = EEPROM.read(addr + 6 + i);
+  }
+  s.name[19] = '\0';
+
+  s.repeat_type = EEPROM.read(addr + 26);
+  EEPROM.get(addr + 27, s.lastTriggered);
+
+  return s;
+}
+
+void saveSchedule(int index, Schedule s) {
+  if (index < 0 || index >= MAX_SCHEDULES) return;
+
+  uint16_t addr = SCHEDULES_START_ADDR + (index * SCHEDULE_SIZE);
+
+  EEPROM.write(addr, s.enabled ? 1 : 0);
+  EEPROM.write(addr + 1, s.action ? 1 : 0);
+  EEPROM.write(addr + 2, s.days);
+  EEPROM.write(addr + 3, s.hour);
+  EEPROM.write(addr + 4, s.minute);
+  EEPROM.write(addr + 5, s.id);
+
+  for (int i = 0; i < 20; i++) {
+    EEPROM.write(addr + 6 + i, i < strlen(s.name) ? s.name[i] : 0);
+  }
+
+  EEPROM.write(addr + 26, s.repeat_type);
+  EEPROM.put(addr + 27, s.lastTriggered);
+  EEPROM.commit();
+}
+
+void handleScheduleCommand(DynamicJsonDocument& doc) {
+  String action = doc["schedule_action"];
+
+  if (action == "add" || action == "update") {
+    Schedule s;
+    memset(&s, 0, sizeof(Schedule));
+
+    s.enabled = doc["enabled"] | true;
+    s.action = doc["action"] == "turn_on";
+    s.hour = doc["hour"];
+    s.minute = doc["minute"];
+    s.id = doc["schedule_id"] | 0;
+    s.days = 0;
+    s.lastTriggered = 0;
+
+    String name = doc["name"] | "";
+    if (name.length() > 0) {
+      strncpy(s.name, name.c_str(), 19);
+      s.name[19] = '\0';
+    } else {
+      sprintf(s.name, "Sched_%d", s.id);
+    }
+
+    JsonArray days = doc["days"];
+    for (JsonVariant d : days) {
+      int num = d.as<int>();
+      if (num >= 0 && num <= 6) {
+        s.days |= (1 << num);
+      }
+    }
+
+    int slot = -1;
+
+    if (s.id > 0) {
+      for (int i = 0; i < MAX_SCHEDULES; i++) {
+        Schedule ex = loadSchedule(i);
+        if (ex.id == s.id) {
+          slot = i;
+          break;
+        }
+      }
+    }
+
+    if (slot == -1) {
+      for (int i = 0; i < MAX_SCHEDULES; i++) {
+        Schedule ex = loadSchedule(i);
+        bool isEmpty = (ex.enabled == 0 && ex.id == 0 && ex.hour == 0 && ex.minute == 0 && ex.days == 0 && (ex.name[0] == 0 || ex.name[0] == 255));
+        if (isEmpty) {
+          slot = i;
+          break;
+        }
+      }
+    }
+
+    if (slot >= 0 && slot < MAX_SCHEDULES) {
+      saveSchedule(slot, s);
+      Serial.printf("[SCHEDULE] Saved slot %d: %s\n", slot, s.name);
+    }
+
+  } else if (action == "delete") {
+    int slot = -1;
+    int schedId = doc["schedule_id"] | -1;
+
+    if (schedId > 0) {
+      for (int i = 0; i < MAX_SCHEDULES; i++) {
+        Schedule ex = loadSchedule(i);
+        if (ex.id == schedId) {
+          slot = i;
+          break;
+        }
+      }
+    }
+
+    if (slot == -1 && doc.containsKey("slot")) {
+      slot = doc["slot"];
+    }
+
+    if (slot >= 0 && slot < MAX_SCHEDULES) {
+      Schedule empty;
+      memset(&empty, 0, sizeof(Schedule));
+      saveSchedule(slot, empty);
+      Serial.printf("[SCHEDULE] Deleted slot %d\n", slot);
+    }
+
+  } else if (action == "clear_all") {
+    for (int i = 0; i < MAX_SCHEDULES; i++) {
+      Schedule empty;
+      memset(&empty, 0, sizeof(Schedule));
+      saveSchedule(i, empty);
+    }
+    Serial.println("[SCHEDULE] All cleared");
+  }
+}
+
+void handleBackendSync(DynamicJsonDocument& doc) {
+  if (doc["sync_type"] == "missed_schedule") {
+    int schedId = doc["schedule_id"];
+    bool act = doc["action"] == "turn_on";
+
+    setSwitchState(act, false);
+
+    for (int i = 0; i < MAX_SCHEDULES; i++) {
+      Schedule s = loadSchedule(i);
+      if (s.id == schedId) {
+        s.lastTriggered = doc["timestamp"] | 0;
+        saveSchedule(i, s);
+        break;
+      }
+    }
+  }
+}
+
+// ============================================
+// WEBSOCKET
+// ============================================
+
+void connectWebSocket() {
+  if (WiFi.status() != WL_CONNECTED) return;
+
+  // Disconnect any existing connection
+  if (webSocket.isConnected()) {
+    webSocket.disconnect();
+    delay(100);
+  }
+
+  Serial.println("[WS] Connecting...");
+  wifiClientSecure.setInsecure();
+  wifiClientSecure.setTimeout(10000);  // Reduced timeout
+
+  webSocket.beginSSL(serverHost, serverPort, "/");
+  webSocket.onEvent(webSocketEvent);
+  webSocket.setReconnectInterval(10000);       // Faster reconnect
+  webSocket.enableHeartbeat(10000, 3000, 2);  // More aggressive heartbeat
+}
+
+void webSocketEvent(WStype_t type, uint8_t* payload, size_t length) {
+  switch (type) {
+    case WStype_DISCONNECTED:
+      Serial.println("[WS] Disconnected");
+      websocketConnected = false;
+      break;
+
+    case WStype_CONNECTED:
+      Serial.println("[WS] Connected");
+      websocketConnected = true;
+      {
+        DynamicJsonDocument doc(200);
+        doc["type"] = "device_connect";
+        doc["deviceId"] = deviceId;
+        doc["switch_state"] = switchState;
+        String msg;
+        serializeJson(doc, msg);
+        webSocket.sendTXT(msg);
+        sendHeartbeat();
+      }
+      break;
+
+    case WStype_TEXT:
+      {
+        DynamicJsonDocument doc(500);
+        if (deserializeJson(doc, payload)) return;
+
+        String type = doc["type"];
+
+        if (type == "command") {
+          String cmdType = doc["command_type"];
+          String cmdValue = doc["command_value"].as<String>();
+
+          if (cmdType == "switch") {
+            bool newState = (cmdValue == "true");
+            setSwitchState(newState, true);
+            sendHeartbeat();
+
+          } else if (cmdType == "schedule") {
+            handleScheduleCommand(doc);
+            sendHeartbeat();
+
+          } else if (cmdType == "sync_missed") {
+            handleBackendSync(doc);
+          }
+        }
+      }
+      break;
+
+    default:
+      break;
+  }
+}
+
+void sendHeartbeat() {
+  if (!websocketConnected) return;
+
+  readCurrent();
+  DynamicJsonDocument doc(300);
+  doc["type"] = "heartbeat";
+  doc["deviceId"] = deviceId;
+  doc["switch_state"] = switchState;
+  doc["current_reading"] = currentReading;
+  doc["voltage"] = 230.0;
+  doc["free_heap"] = ESP.getFreeHeap();
+  doc["uptime"] = millis() / 1000;
+
+  String msg;
+  serializeJson(doc, msg);
+  webSocket.sendTXT(msg);
+}
+
+void sendScheduleNotification(int index, Schedule s) {
+  if (!websocketConnected) return;
+
+  DynamicJsonDocument doc(300);
+  doc["type"] = "schedule_executed";
+  doc["deviceId"] = deviceId;
+  doc["schedule_index"] = index;
+  doc["schedule_id"] = s.id;
+  doc["action"] = s.action ? "turn_on" : "turn_off";
+  doc["current_state"] = switchState;
+  doc["timestamp"] = millis();
+
+  String msg;
+  serializeJson(doc, msg);
+  webSocket.sendTXT(msg);
+}
+
+// ============================================
+// WEB SERVER
+// ============================================
+
+void setupWebServer() {
+  server.on("/", handleSetupRoot);
+  server.on("/scan", handleWiFiScan);
+  server.on("/connect", handleWiFiConnect);
+}
+
+void handleSetupRoot() {
+  String html = "<!DOCTYPE html><html><head><title>WiFi Setup</title>";
+  html += "<meta name='viewport' content='width=device-width,initial-scale=1'>";
+  html += "<style>body{font-family:Arial;padding:20px;background:#f0f0f0;}";
+  html += ".container{max-width:400px;margin:0 auto;background:white;padding:20px;border-radius:10px;box-shadow:0 2px 10px rgba(0,0,0,0.1);}";
+  html += "h1{color:#333;text-align:center;}";
+  html += "button{width:100%;padding:15px;margin:10px 0;border:none;border-radius:5px;";
+  html += "background:#4CAF50;color:white;font-size:16px;cursor:pointer;}";
+  html += "button:hover{background:#45a049;}";
+  html += ".info{background:#e3f2fd;padding:10px;border-radius:5px;margin:10px 0;}";
+  html += ".network{background:#f5f5f5;padding:10px;margin:5px 0;border-radius:5px;cursor:pointer;}";
+  html += ".network:hover{background:#e0e0e0;}</style></head><body>";
+  html += "<div class='container'><h1>Smart Switch Setup</h1>";
+  html += "<div class='info'><strong>Device ID:</strong> " + deviceId + "</div>";
+
+  if (currentState == STATE_CYCLIC_AP) {
+    html += "<div class='info' style='background:#fff3cd;'>Auto-reconnect mode active</div>";
+  }
+
+  html += "<button onclick='scan()'>Scan WiFi Networks</button>";
+  html += "<div id='networks'></div>";
+  html += "<script>";
+  html += "function scan(){";
+  html += "document.getElementById('networks').innerHTML='<p>Scanning...</p>';";
+  html += "fetch('/scan').then(r=>r.json()).then(d=>{";
+  html += "let h='';d.networks.forEach(n=>{";
+  html += "h+=`<div class='network' onclick=\"connect('${n.ssid}')\">${n.ssid} (${n.rssi}dB)</div>`;";
+  html += "});document.getElementById('networks').innerHTML=h||'<p>No networks found</p>';});}";
+  html += "function connect(s){let p=prompt('Password for '+s);if(p){";
+  html += "fetch('/connect',{method:'POST',headers:{'Content-Type':'application/json'},";
+  html += "body:JSON.stringify({ssid:s,password:p})}).then(r=>r.json()).then(d=>{";
+  html += "if(d.success){alert('Connected! Device will restart.');window.location.href=d.redirect;}";
+  html += "else{alert('Failed to connect');}});}}</script></body></html>";
+
+  server.send(200, "text/html", html);
+}
+
+void handleWiFiScan() {
+  int n = WiFi.scanNetworks();
+  DynamicJsonDocument doc(1024);
+  JsonArray nets = doc.createNestedArray("networks");
+
+  for (int i = 0; i < n && i < 10; i++) {  // Limit to 10 networks to save memory
+    JsonObject net = nets.createNestedObject();
+    net["ssid"] = WiFi.SSID(i);
+    net["rssi"] = WiFi.RSSI(i);
+  }
+
+  String resp;
+  serializeJson(doc, resp);
+  server.send(200, "application/json", resp);
+  WiFi.scanDelete();  // Free memory
+}
+
+void handleWiFiConnect() {
+  DynamicJsonDocument doc(256);
+  deserializeJson(doc, server.arg("plain"));
+  String ssid = doc["ssid"];
+  String pass = doc["password"];
+
+  // Save credentials
+  saveWiFiCredentials(ssid, pass);
+  cachedSSID = ssid;
+  cachedPass = pass;
+
+  // Try to connect
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid.c_str(), pass.c_str());
+
+  int attempts = 0;
+  while (WiFi.status() != WL_CONNECTED && attempts < 20) {
+    delay(500);
+    attempts++;
+  }
+
+  DynamicJsonDocument resp(200);
+  if (WiFi.status() == WL_CONNECTED) {
+    resp["success"] = true;
+    resp["redirect"] = "https://gogreener.vercel.app/device-setup?id=" + deviceId + "&step=register";
+    resp["ip"] = WiFi.localIP().toString();
+  } else {
+    resp["success"] = false;
+  }
+
+  String r;
+  serializeJson(resp, r);
+  server.send(200, "application/json", r);
+
+  if (WiFi.status() == WL_CONNECTED) {
+    delay(1000);
+    ESP.restart();
+  }
+}
+
+// ============================================
+// EEPROM
+// ============================================
+
+bool loadWiFiCredentials() {
+  String ssid = "";
+  for (int i = 0; i < 32; i++) {
+    char c = EEPROM.read(WIFI_SSID_ADDR + i);
+    if (c == 0 || c == 255) break;  // Check for 255 (uninitialized EEPROM)
+    ssid += c;
+  }
+  return ssid.length() > 0;
+}
+
+void loadWiFiCredentialsStrings(String& ssid, String& pass) {
+  ssid = "";
+  pass = "";
+  for (int i = 0; i < 32; i++) {
+    char c = EEPROM.read(WIFI_SSID_ADDR + i);
+    if (c == 0 || c == 255) break;
+    ssid += c;
+  }
+  for (int i = 0; i < 32; i++) {
+    char c = EEPROM.read(WIFI_PASS_ADDR + i);
+    if (c == 0 || c == 255) break;
+    pass += c;
+  }
+}
+
+void saveWiFiCredentials(String ssid, String pass) {
+  // Clear EEPROM first
+  for (int i = 0; i < 64; i++) {
+    EEPROM.write(WIFI_SSID_ADDR + i, 0);
+    EEPROM.write(WIFI_PASS_ADDR + i, 0);
+  }
+
+  // Write new credentials
+  for (int i = 0; i < ssid.length() && i < 32; i++) {
+    EEPROM.write(WIFI_SSID_ADDR + i, ssid[i]);
+  }
+  for (int i = 0; i < pass.length() && i < 32; i++) {
+    EEPROM.write(WIFI_PASS_ADDR + i, pass[i]);
+  }
+  EEPROM.commit();
+}
+
+bool loadSwitchState() {
+  byte state = EEPROM.read(SWITCH_STATE_ADDR);
+  if (state == 255) {
+    saveSwitchState(false);
+    return false;
+  }
+  return (state == 1);
+}
+
+void saveSwitchState(bool state) {
+  EEPROM.write(SWITCH_STATE_ADDR, state ? 1 : 0);
+  EEPROM.commit();
+}
+
+uint32_t loadLastTime() {
+  uint32_t t;
+  EEPROM.get(LAST_TIME_ADDR, t);
+  return (t < 1577836800 || t == 0xFFFFFFFF) ? 0 : t;
+}
+
+void saveLastTime(uint32_t t) {
+  EEPROM.put(LAST_TIME_ADDR, t);
+  EEPROM.commit();
+}
+
+// ============================================
+// UTILITIES
+// ============================================
+
+void setSwitchState(bool state, bool manual) {
+  switchState = state;
+  digitalWrite(SWITCH_PIN, switchState ? HIGH : LOW);
+  saveSwitchState(state);
+  Serial.printf("[SWITCH] %s (%s)\n", switchState ? "ON" : "OFF", manual ? "Manual" : "Auto");
+}
+
+void readCurrent() {
+  currentReading = switchState ? (2.5 + random(0, 50) / 100.0) : 0.0;
+}
+
+void handleSerialCommands() {
+  if (!Serial.available()) return;
+
+  String cmd = Serial.readStringUntil('\n');
+  cmd.trim();
+  cmd.toLowerCase();
+
+  if (cmd == "clear") {
+    Serial.println("Clearing ALL schedules...");
+    for (int i = 0; i < MAX_SCHEDULES; i++) {
+      Schedule empty;
+      memset(&empty, 0, sizeof(Schedule));
+      saveSchedule(i, empty);
+    }
+    Serial.println("Done");
+
+  } else if (cmd == "status") {
+    Serial.println("\n=== STATUS ===");
+    Serial.printf("State: %d\n", currentState);
+    Serial.printf("WiFi: %s\n", WiFi.status() == WL_CONNECTED ? "Connected" : "Disconnected");
+    Serial.printf("IP: %s\n", WiFi.localIP().toString().c_str());
+    Serial.printf("WebSocket: %s\n", websocketConnected ? "Connected" : "Disconnected");
+    Serial.printf("Free Heap: %d bytes\n", ESP.getFreeHeap());
+    Serial.printf("Heap Fragmentation: %d%%\n", ESP.getHeapFragmentation());
+    Serial.printf("Uptime: %lu seconds\n", millis() / 1000);
+    Serial.println("==============\n");
+
+  } else if (cmd == "restart") {
+    Serial.println("Restarting...");
+    ESP.restart();
+
+  } else if (cmd == "forget") {
+    Serial.println("Forgetting WiFi credentials...");
+    saveWiFiCredentials("", "");
+    cachedSSID = "";
+    cachedPass = "";
+    ESP.restart();
+  }
+}
