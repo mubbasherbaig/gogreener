@@ -1467,7 +1467,7 @@ const wsHealthCheck = setInterval(() => {
       console.log('Terminating dead connection');
       // Update device status to offline
       const deviceId = ws.deviceId;
-      if (deviceId && connectedDevices.has(deviceId)) {
+      if (deviceId && deviceConnections.has(deviceId)) {
         connectedDevices.delete(deviceId);
         updateDeviceStatus(deviceId, false);
       }
