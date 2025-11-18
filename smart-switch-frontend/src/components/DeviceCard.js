@@ -102,7 +102,6 @@ const DeviceCard = ({ device, onControl, onViewChart, onDelete, onSchedules }) =
       </div>
       
       <div className="device-info">
-        <p><strong>Model:</strong> {device.model}</p>
         <p><strong>Device ID:</strong> {device.id}</p>
         <p><strong>Current:</strong> {currentReading.toFixed(2)} A</p>
         <p><strong>Last Seen:</strong> {device.last_seen ? new Date(device.last_seen).toLocaleTimeString() : 'Never'}</p>
