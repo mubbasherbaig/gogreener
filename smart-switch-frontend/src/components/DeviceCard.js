@@ -86,7 +86,9 @@ const DeviceCard = ({ device, onControl, onViewChart, onDelete, onSchedules }) =
   const handleSchedules = () => {
     onSchedules(device);
   };
-
+  const cleanDeviceId = (id) => {
+    return id.replace(/^ESP(32|8266)_/i, '');
+  };
   return (
     <div className={`device-card ${isOnline ? 'online' : 'offline'}`}>
       <div className="device-header">
@@ -102,7 +104,8 @@ const DeviceCard = ({ device, onControl, onViewChart, onDelete, onSchedules }) =
       </div>
       
       <div className="device-info">
-        <p><strong>Device ID:</strong> {device.id}</p>
+        {/* <p><strong>Model:</strong> {device.model}</p> */}
+        <strong>Device ID:</strong> {cleanDeviceId(device.id)}
         <p><strong>Current:</strong> {currentReading.toFixed(2)} A</p>
         <p><strong>Last Seen:</strong> {device.last_seen ? new Date(device.last_seen).toLocaleTimeString() : 'Never'}</p>
         {nextSchedule ? (
